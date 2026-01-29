@@ -10,35 +10,29 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # 1. Checkout repo
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # 2. Use stable Python
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
-      # 3. Upgrade pip tooling (prevents CI bugs)
       - name: Upgrade pip tooling
         run: |
           python -m pip install --upgrade pip setuptools packaging
 
-      # 4. Install dependencies
       - name: Install dependencies
         run: |
           pip install -r requirements.txt
 
-      # 5. Decode base64 Google credentials
-      - name: Decode Google credentials
+      - name: Write Google credentials
         shell: bash
         run: |
           mkdir -p credentials
-          echo "${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}" | base64 --decode > credentials/service_account.json
+          printf "%s" "${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}" > credentials/service_account.json
           test -s credentials/service_account.json
 
-      # 6. Run the job agent
       - name: Run job agent
         run: |
-          PYTHONPATH=src py
+          PYTHONPATH=src python src/run_greenhouse_ingest.py
