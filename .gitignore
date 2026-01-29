@@ -1,0 +1,15 @@
+# Python
+__pycache__/
+*.py[cod]
+
+# Virtual environment
+venv/
+
+# Credentials / secrets
+credentials/*.json
+
+# Logs
+*.log
+
+# OS
+.DS_Store
