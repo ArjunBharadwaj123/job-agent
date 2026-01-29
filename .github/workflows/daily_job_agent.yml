@@ -18,6 +18,10 @@ jobs:
         with:
           python-version: "3.11"
 
+      - name: Upgrade pip tooling
+        run: |
+          python -m pip install --upgrade pip setuptools packaging
+
       - name: Install dependencies
         run: |
           pip install -r requirements.txt
