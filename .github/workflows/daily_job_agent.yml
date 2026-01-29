@@ -2,7 +2,8 @@ name: Daily Job Agent
 
 on:
   schedule:
-    - cron: "0 14 * * *"   # 9 AM EST
+    # Runs every day at 9:00 AM EST
+    - cron: "0 14 * * *"
   workflow_dispatch:
 
 jobs:
@@ -10,27 +11,35 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      # 1️⃣ Checkout repo
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      # 2️⃣ Set up Python (stable version)
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
+      # 3️⃣ Upgrade pip tooling (avoids packaging bugs)
       - name: Upgrade pip tooling
         run: |
           python -m pip install --upgrade pip setuptools packaging
 
+      # 4️⃣ Install dependencies
       - name: Install dependencies
         run: |
           pip install -r requirements.txt
 
+      # 5️⃣ Write Google service account credentials safely
       - name: Write Google credentials
         run: |
           mkdir -p credentials
-          echo '${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}' > credentials/service_account.json
+          cat << 'EOF' > credentials/service_account.json
+          ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+          EOF
 
+      # 6️⃣ Run the job agent
       - name: Run job agent
         run: |
-          python src/run_greenhouse_ingest.py
+          PYTHONPATH=src python src/run_greenhouse_ingest.py
