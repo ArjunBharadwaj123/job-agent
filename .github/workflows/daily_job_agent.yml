@@ -30,8 +30,8 @@ jobs:
         run: |
           mkdir -p credentials
           cat <<EOF > credentials/service_account.json
-${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
-EOF
+          ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+          EOF
 
       - name: Run job agent
         env:
