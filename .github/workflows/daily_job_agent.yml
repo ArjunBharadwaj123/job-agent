@@ -29,7 +29,7 @@ jobs:
       - name: Write Google credentials
         run: |
           mkdir -p credentials
-          cat <<'EOF' > credentials/service_account.json
+          cat <<EOF > credentials/service_account.json
       ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
       EOF
           jq empty credentials/service_account.json
