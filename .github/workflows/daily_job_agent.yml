@@ -37,4 +37,4 @@ jobs:
         env:
           GOOGLE_APPLICATION_CREDENTIALS: credentials/service_account.json
         run: |
-          PYTHONPATH=src python src/run_greenhouse_ingest.py
+          PYTHONPATH=src python src/run_github_ingestion.py

@@ -2,7 +2,6 @@ from google.oauth2.service_account import Credentials
 from googleapiclient.discovery import build
 import re
 import hashlib
-from scrapers.greenhouse import GreenhouseScraper
 
 
 # ----------------------------
@@ -29,20 +28,14 @@ REQUIRED_COLUMNS = {
 
 # Columns the agent is allowed to write to (metadata only)
 SYSTEM_WRITABLE_COLUMNS = {
-    "job_url",          # links can change
-    "source",           # scraper/source metadata
-    "date_posted",      # may be refined
-    "relevance_score",  # computed by agent
-    "role_type",        # classification
-    "confidence",       # agent confidence
-    "archived",         # agent lifecycle control
-    "last_updated",     # always updated
-}
-
-CONTENT_UPDATE_COLUMNS = {
     "job_url",
     "source",
     "date_posted",
+    "relevance_score",
+    "role_type",
+    "confidence",
+    "archived",
+    "last_updated",
 }
 
 # Columns that must NEVER be written by the agent
@@ -267,7 +260,7 @@ def update_single_cell(
 
     # --- Perform update ---
     body = {
-        "values": [[str(new_value)]]
+        "values": [[new_value]]
     }
 
     service.spreadsheets().values().update(
@@ -276,6 +269,61 @@ def update_single_cell(
         valueInputOption="RAW",
         body=body,
     ).execute()
+
+def update_job_row(
+    service,
+    spreadsheet_id,
+    sheet_name,
+    job_id,
+    updates: dict,
+    job_index,
+    jobs,
+    column_map,
+):
+    """
+    Updates multiple columns for a job in a single Sheets API call.
+    """
+
+    if job_id not in job_index:
+        raise RuntimeError(f"Unknown job_id: {job_id}")
+
+    job = jobs[job_id]
+
+    if job["locked"]:
+        return "locked"
+
+    row_index = job_index[job_id]
+
+    # Build row update
+    data = []
+    for column_name, new_value in updates.items():
+        if column_name in USER_OWNED_COLUMNS:
+            continue
+        if column_name not in SYSTEM_WRITABLE_COLUMNS:
+            continue
+
+        col_index = column_map[column_name]
+        col_letter = chr(ord("A") + col_index)
+
+        data.append({
+            "range": f"{sheet_name}!{col_letter}{row_index}",
+            "values": [[new_value]],
+        })
+
+    if not data:
+        return "exists"
+
+    body = {
+        "valueInputOption": "RAW",
+        "data": data,
+    }
+
+    service.spreadsheets().values().batchUpdate(
+        spreadsheetId=spreadsheet_id,
+        body=body,
+    ).execute()
+
+    return "updated"
 
 
 def get_sheet_id(service, spreadsheet_id, sheet_name):
@@ -316,59 +364,63 @@ def insert_row_at_top(service, spreadsheet_id, sheet_id):
         body=body,
     ).execute()
 
-
-
-def append_new_job(
+def append_new_jobs_bulk(
     service,
     spreadsheet_id,
     sheet_name,
     sheet_id,
-    job_data,
+    jobs_data: list,
     column_map,
 ):
     """
-    Inserts a new job row at the TOP of the sheet (below headers).
+    Inserts multiple new jobs at the TOP of the sheet in ONE operation.
     """
 
-    # 1. Insert a new empty row at the top
-    insert_row_at_top(service, spreadsheet_id, sheet_id)
+    if not jobs_data:
+        return
 
-    # 2. Build row data
-    row_length = len(column_map)
-    new_row = [""] * row_length
+    num_rows = len(jobs_data)
 
-    def set_cell(column_name, value):
-        if column_name not in column_map:
-            return
-        idx = column_map[column_name]
-        new_row[idx] = str(value)
+    # 1️⃣ Insert N empty rows below header
+    body = {
+        "requests": [
+            {
+                "insertDimension": {
+                    "range": {
+                        "sheetId": sheet_id,
+                        "dimension": "ROWS",
+                        "startIndex": 1,
+                        "endIndex": 1 + num_rows,
+                    },
+                    "inheritFromBefore": False,
+                }
+            }
+        ]
+    }
 
-    # Identity + source fields
-    set_cell("job_id", job_data["job_id"])
-    set_cell("job_url", job_data["job_url"])
-    set_cell("source", job_data["source"])
-    set_cell("date_found", job_data["date_found"])
-    set_cell("job_title", job_data["job_title"])
-    set_cell("company", job_data["company"])
-    set_cell("location", job_data["location"])
-    set_cell("date_posted", job_data["date_posted"])
+    service.spreadsheets().batchUpdate(
+        spreadsheetId=spreadsheet_id,
+        body=body,
+    ).execute()
 
-    # State initialization
-    set_cell("applied", "FALSE")
-    set_cell("locked", "FALSE")
-    set_cell("archived", "FALSE")
-    set_cell("last_updated", job_data["date_found"])
+    # 2️⃣ Build row values
+    rows = []
+    for job_data in jobs_data:
+        row = [""] * len(column_map)
+        for col, idx in column_map.items():
+            if col in job_data:
+                row[idx] = job_data[col]
+        rows.append(row)
 
-    # 3. Write into row 2
+    # 3️⃣ Write all rows at once
     range_name = f"{sheet_name}!A2"
 
     service.spreadsheets().values().update(
         spreadsheetId=spreadsheet_id,
         range=range_name,
         valueInputOption="RAW",
-        body={"values": [new_row]},
+        body={"values": rows},
     ).execute()
-
 
 def process_raw_job(
     raw_job,
@@ -405,27 +457,26 @@ def process_raw_job(
     # 2. NEW JOB → APPEND
     # ──────────────────────────────
     if job_id not in job_index:
-        job_data = {
-            "job_id": job_id,
-            "job_url": raw_job["job_url"],
-            "source": raw_job["source"],
-            "date_found": now,
-            "job_title": raw_job["job_title"],
-            "company": raw_job["company"],
-            "location": raw_job["location"],
-            "date_posted": raw_job.get("date_posted", ""),
+        return {
+            "action": "new",
+            "job_data": {
+                "job_id": job_id,
+                "job_url": raw_job["job_url"],
+                "source": raw_job["source"],
+                "date_found": now,
+                "job_title": raw_job["job_title"],
+                "company": raw_job["company"],
+                "location": raw_job["location"],
+                "date_posted": raw_job.get("date_posted", ""),
+                "relevance_score": raw_job.get("relevance_score", ""),
+                "role_type": raw_job.get("role_type", ""),
+                "confidence": raw_job.get("confidence", ""),
+                "applied": False,
+                "locked": False,
+                "archived": False,
+                "last_updated": now,
+            }
         }
-
-        append_new_job(
-            service=service,
-            spreadsheet_id=spreadsheet_id,
-            sheet_name=sheet_name,
-            sheet_id=sheet_id,
-            job_data=job_data,
-            column_map=column_map,
-        )
-
-        return "appended"
 
     # ──────────────────────────────
     # 3. EXISTING JOB
@@ -454,44 +505,35 @@ def process_raw_job(
         "job_url": raw_job["job_url"],
         "source": raw_job["source"],
         "date_posted": raw_job.get("date_posted", ""),
+        "relevance_score": raw_job.get("relevance_score", ""),
+        "role_type": raw_job.get("role_type", ""),
+        "confidence": raw_job.get("confidence", ""),
     }
 
-    updated_anything = False
+    row_updates = {}
 
     for column_name, new_value in updates.items():
         old_value = get_existing(column_name)
-
-        # Only write if value actually changed
         if str(old_value) != str(new_value):
-            update_single_cell(
-                service=service,
-                spreadsheet_id=spreadsheet_id,
-                sheet_name=sheet_name,
-                job_id=job_id,
-                column_name=column_name,
-                new_value=new_value,
-                job_index=job_index,
-                jobs=jobs,
-                column_map=column_map,
-            )
-            updated_anything = True
+            row_updates[column_name] = new_value
 
-    # ──────────────────────────────
-    # 5. ALWAYS UPDATE last_updated
-    # ──────────────────────────────
-    update_single_cell(
-        service=service,
-        spreadsheet_id=spreadsheet_id,
-        sheet_name=sheet_name,
-        job_id=job_id,
-        column_name="last_updated",
-        new_value=now,
-        job_index=job_index,
-        jobs=jobs,
-        column_map=column_map,
-    )
+    # Always update heartbeat
+    row_updates["last_updated"] = now
 
-    return "updated" if updated_anything else "exists"
+    if row_updates:
+        update_job_row(
+            service=service,
+            spreadsheet_id=spreadsheet_id,
+            sheet_name=sheet_name,
+            job_id=job_id,
+            updates=row_updates,
+            job_index=job_index,
+            jobs=jobs,
+            column_map=column_map,
+        )
+        return "updated"
+
+    return "exists"
 
 
 def refresh_jobs(
@@ -517,6 +559,8 @@ def refresh_jobs(
         "locked": 0,
     }
 
+    new_jobs = []
+
     for raw_job in raw_jobs:
         result = process_raw_job(
             raw_job=raw_job,
@@ -530,13 +574,21 @@ def refresh_jobs(
             column_map=column_map,
         )
 
-        results[result] += 1
+        if isinstance(result, dict) and result.get("action") == "new":
+            new_jobs.append(result["job_data"])
+            results["appended"] += 1
+        else:
+            results[result] += 1
 
-        # CRITICAL:
-        # Sheet structure may have changed (top insert),
-        # so we must re-read state after every mutation
-        _, rows, column_map = read_jobs_sheet()
-        job_index, jobs = build_job_index(rows, column_map)
+    # 🔥 BULK INSERT HERE
+    append_new_jobs_bulk(
+        service=service,
+        spreadsheet_id=spreadsheet_id,
+        sheet_name=sheet_name,
+        sheet_id=sheet_id,
+        jobs_data=new_jobs,
+        column_map=column_map,
+    )
 
     return results
 
