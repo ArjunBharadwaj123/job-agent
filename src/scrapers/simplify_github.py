@@ -227,7 +227,7 @@ class SimplifyGitHubScraper:
             is_remote = "remote" in location
             has_state = any(f", {s}" in location for s in us_states)
 
-            if not has_state and (location == "nyc" or location == "sf"):
+            if not has_state and (location == "nyc" or location == "sf" or location == "sfnyc"):
                 has_state = True
 
             if not is_remote and not has_state:
