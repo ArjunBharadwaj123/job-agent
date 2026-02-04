@@ -125,11 +125,15 @@ class SimplifyGitHubScraper:
             "hi","id","il","in","ia","ks","ky","la","me","md",
             "ma","mi","mn","ms","mo","mt","ne","nv","nh","nj",
             "nm","ny","nc","nd","oh","ok","or","pa","ri","sc",
-            "sd","tn","tx","ut","vt","va","wa","wv","wi","wy"
+            "sd","tn","tx","ut","vt","va","wa","wv","wi","wy",
+            "dc"
         }
 
         is_remote = "remote" in loc
         is_us = any(f", {s}" in loc for s in us_states)
+
+        if not is_us and (location == "nyc" or location == "sf" or location == "sfnyc"):
+                is_us = True
 
         if not is_remote and not is_us:
             score -= 25   # soft penalty for non-US
