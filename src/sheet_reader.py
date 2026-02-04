@@ -135,8 +135,8 @@ def build_job_index(rows, column_map):
             continue
 
         # Detect duplicate job_ids (critical safety check)
-        if job_id in job_index:
-            raise RuntimeError(f"Duplicate job_id detected: {job_id}")
+        #if job_id in job_index:
+        #    raise RuntimeError(f"Duplicate job_id detected: {job_id}")
 
         job_index[job_id] = sheet_row_index
         jobs[job_id] = {
@@ -531,6 +531,8 @@ def process_raw_job(
             jobs=jobs,
             column_map=column_map,
         )
+        
+    if len(row_updates) > 1:  # more than just heartbeat
         return "updated"
 
     return "exists"

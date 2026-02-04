@@ -19,6 +19,7 @@ class SimplifyGitHubScraper:
         raw_jobs = []
         for row in rows:
             if not self._passes_filters(row):
+                print(f"Filtered out: {row['company']} - {row['role']} ({row['location']}) - Age: {row['age']}")
                 continue
 
             raw_jobs.append(self._build_raw_job(row))
@@ -174,6 +175,7 @@ class SimplifyGitHubScraper:
         location = row.get("location", "").lower()
         age_str = row.get("age", "")
 
+
         if "mo" in age_str:
             return False
 
@@ -218,7 +220,8 @@ class SimplifyGitHubScraper:
                 "hi","id","il","in","ia","ks","ky","la","me","md",
                 "ma","mi","mn","ms","mo","mt","ne","nv","nh","nj",
                 "nm","ny","nc","nd","oh","ok","or","pa","ri","sc",
-                "sd","tn","tx","ut","vt","va","wa","wv","wi","wy"
+                "sd","tn","tx","ut","vt","va","wa","wv","wi","wy",
+                "sf", "nyc", "dc"
             }
 
             is_remote = "remote" in location

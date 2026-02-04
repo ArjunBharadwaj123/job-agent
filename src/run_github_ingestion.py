@@ -37,12 +37,6 @@ raw_jobs = raw_jobs[:MAX_JOBS]
 
 print(f"Processing {len(raw_jobs)} jobs (max_jobs={MAX_JOBS})")
 
-# 🔍 DEBUG: inspect raw output
-print(len(raw_jobs), "jobs scraped.")
-print("Sample jobs:")
-for job in raw_jobs[:3]:
-    print(job)
-
 # ----------------------------
 # Write to sheet
 # ----------------------------
