@@ -1,182 +1,189 @@
-🧠 Job Agent — Automated Internship Tracker
+# 🧠 Job Agent — Automated Internship Tracker
 
-An automated, idempotent job ingestion agent that scrapes internship postings, enriches them with relevance scoring, and syncs them safely into Google Sheets — without overwriting user input or creating duplicates.
+An automated, idempotent job ingestion agent that scrapes internship postings, enriches them with relevance scoring, and safely syncs them into Google Sheets — without overwriting user input or creating duplicates.
 
-Built to solve the problem of missing early internship postings while tracking applications in a clean, user-controlled workflow.
+Built to solve the problem of missing early internship postings while maintaining a clean, user-controlled tracking workflow.
 
-🚨 The Problem
+---
+
+## 🚨 The Problem
 
 During internship recruiting, I found myself:
 
-Checking job boards daily
-
-Monitoring the same companies repeatedly
-
-Manually tracking postings in spreadsheets
-
-Accidentally missing early applications
+- Checking job boards daily
+- Monitoring the same companies repeatedly
+- Manually tracking postings in spreadsheets
+- Accidentally missing early applications
 
 Most existing tools either:
 
-overwrite user edits
+- Overwrite user edits  
+- Create duplicate entries  
+- Don’t support automation  
+- Don’t allow configurable relevance filtering  
 
-duplicate jobs
+---
 
-don’t support automation
-
-or don’t give control over relevance filtering
-
-✅ The Solution
+## ✅ The Solution
 
 This project is a job ingestion agent that:
 
-Pulls live internship postings from GitHub (SimplifyJobs)
+- Pulls live internship postings from GitHub (SimplifyJobs repository)
+- Normalizes and de-duplicates jobs deterministically
+- Scores jobs by relevance using configurable keywords
+- Respects user-owned spreadsheet fields (e.g., applied status)
+- Writes updates in bulk to avoid API rate limits
+- Is safe to run repeatedly (idempotent by design)
 
-Normalizes and de-duplicates jobs deterministically
+---
 
-Scores jobs by relevance using configurable keywords
+## 🧩 High-Level Architecture
 
-Respects user-owned spreadsheet fields (e.g. applied status)
-
-Writes updates in bulk to avoid API rate limits
-
-Is safe to run repeatedly (idempotent by design)
-
-🧩 High-Level Architecture
+```
 GitHub Job Source (Markdown)
-        ↓
+            ↓
 HTML Parsing + Normalization
-        ↓
+            ↓
 Relevance & Confidence Scoring
-        ↓
-Decision Phase (in memory)
-        ↓
+            ↓
+Decision Phase (In Memory)
+            ↓
 Bulk Write to Google Sheets
+```
 
+**Key Principle:**
 
-Key principle:
+> Decide first. Write once. Never interleave.
 
-Decide first. Write once. Never interleave.
+All mutation decisions are computed in memory before a single bulk write occurs.
 
-🗂️ Project Structure
+---
+
+## 🗂️ Project Structure
+
+```
 job-agent/
 ├── src/
 │   ├── scrapers/
-│   │   └── simplify_github.py      # GitHub job scraper
-│   ├── sheet_reader.py             # Sheets sync + idempotency logic
-│   ├── settings.py                 # User preferences loader
-│   ├── run_github_ingestion.py     # Entry point
+│   │   └── simplify_github.py        # GitHub job scraper
+│   ├── sheet_reader.py               # Sheets sync + idempotency logic
+│   ├── settings.py                   # User preferences loader
+│   ├── run_github_ingestion.py       # Entry point
 │
 ├── credentials/
-│   └── service_account.json        # Google Sheets service account
+│   └── service_account.json          # Google Sheets service account (NOT committed)
 │
 ├── venv/
 └── README.md
+```
 
-📊 Google Sheets Schema
-User-Owned Columns (never overwritten)
+---
 
-applied (checkbox)
+## 📊 Google Sheets Schema
 
-date_applied
+### 🔒 User-Owned Columns (Never Overwritten)
 
-application_status
+- `applied` (checkbox)
+- `date_applied`
+- `application_status`
+- `priority`
+- `notes`
 
-priority
+### ⚙️ System-Managed Columns
 
-notes
+- `job_id` (deterministic SHA-256 hash)
+- `job_title`
+- `company`
+- `location`
+- `job_url`
+- `date_posted`
+- `relevance_score`
+- `role_type`
+- `confidence`
+- `last_updated`
+- `archived`
 
-System-Managed Columns
+---
 
-job_id (deterministic SHA-256 hash)
+## ⚙️ User Settings (Configured via Sheets)
 
-job_title
+The agent reads preferences from a `Settings` sheet.
 
-company
+| Setting | Description |
+|----------|-------------|
+| required_job_type | e.g. internship, intern |
+| keywords | Relevance keywords (e.g. software, ML, AI) |
+| max_days_back | How far back to scan |
+| max_jobs | Ingestion cap per run |
+| us_only | Location filter |
+| remote_allowed | Allow remote roles |
 
-location
+This allows non-code customization of ingestion behavior.
 
-job_url
+---
 
-date_posted
+## 🧠 Relevance Scoring
 
-relevance_score
+Each job is scored from **0–100** based on:
 
-role_type
+- Keyword matches (software, ML, AI, backend, etc.)
+- Role type (internship vs other)
+- Location relevance (US / Remote)
 
-confidence
-
-last_updated
-
-archived
-
-⚙️ User Settings (via Sheets)
-
-The agent reads preferences from a Settings sheet:
-
-Setting	Description
-required_job_type	e.g. internship, intern
-keywords	relevance keywords
-max_days_back	how far back to scan
-max_jobs	ingestion cap per run
-us_only	location filter
-remote_allowed	allow remote roles
-
-This allows non-code customization.
-
-🧠 Relevance Scoring
-
-Each job is scored from 0–100 based on:
-
-Keyword matches (software, ML, AI, etc.)
-
-Role type (internship vs other)
-
-Location relevance (US / Remote)
-
-relevance_score → confidence = score / 100
-
+```
+confidence = relevance_score / 100
+```
 
 Confidence represents how strongly the posting matches the user’s intent.
 
-🔐 Idempotency & Safety Guarantees
+---
 
-This system is designed to be safe under retries and failures:
+## 🔐 Idempotency & Safety Guarantees
 
-✔ Deterministic job IDs
-✔ Bulk writes only (no partial rows)
-✔ No user column overwrites
-✔ Duplicate detection guard
-✔ Crash-safe reruns
+This system is designed to be safe under retries and failures.
 
-If a run fails midway (e.g. API rate limit), rerunning will not duplicate jobs.
+✔ Deterministic job IDs  
+✔ Bulk writes only (no partial rows)  
+✔ No user column overwrites  
+✔ Duplicate detection guard  
+✔ Crash-safe reruns  
 
-☑️ Checkbox Handling
+If a run fails midway (e.g., API rate limit), rerunning will not duplicate jobs.
 
-applied is a true checkbox column
+---
 
-Rendered via Sheets data-validation rules
+## ☑️ Checkbox Handling
 
-Visibility controlled by a formula:
-
+- `applied` is a true checkbox column
+- Rendered via Google Sheets data-validation rules
+- Visibility controlled via formula:
+  
+```
 =IF($A2<>"", FALSE, )
+```
 
+The agent **never writes to this column**.
 
-Agent never writes to this column
+---
 
-▶️ How to Run
+## ▶️ How to Run
+
+```bash
 python src/run_github_ingestion.py
-
+```
 
 You can safely run this:
 
-daily
+- Daily
+- Multiple times per day
+- After partial failures
+- On cron / scheduled automation
 
-multiple times per day
+---
 
-after partial failures
+## 🧪 Example Output
 
-🧪 Example Output
+```json
 {
   "job_title": "Software Engineer Intern",
   "company": "RTX",
@@ -184,33 +191,39 @@ after partial failures
   "relevance_score": 100,
   "confidence": 1.0
 }
+```
 
-🚀 Why This Matters
+---
+
+## 🚀 Why This Matters
 
 This project demonstrates:
 
-Real-world API constraints (rate limits)
+- Real-world API constraint handling (rate limits)
+- Idempotent data pipeline design
+- Safe user/system data separation
+- Production-style batch processing
+- Practical recruiting automation
 
-Idempotent data pipelines
+This is not just a scraper — it is a resilient ingestion system built with real-world constraints in mind.
 
-Safe user/system data separation
+---
 
-Production-style batch processing
+## 🔮 Future Improvements
 
-Practical automation for recruiting
+- Resume matching for personalized scoring
+- Email / Slack alerts for high-confidence jobs
+- Multi-source ingestion (Greenhouse, Lever, etc.)
+- Auto-archive expired roles
+- Dashboard visualization
 
-🔮 Future Improvements
+---
 
-Resume matching for personalized scoring
+## 📌 Takeaway
 
-Email / Slack alerts for high-confidence jobs
+This project reflects production engineering principles applied to a real-world problem:
 
-Multi-source ingestion (Greenhouse, Lever)
-
-Auto-archive expired roles
-
-Dashboard visualization
-
-📌 Takeaway
-
-This is not just a scraper — it’s a reliable ingestion system built with real-world constraints in mind.
+Reliable ingestion.  
+Deterministic processing.  
+User-safe data management.  
+Automation with control.
