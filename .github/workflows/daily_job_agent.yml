@@ -2,8 +2,7 @@ name: Daily Job Agent
 
 on:
   schedule:
-    - cron: "0 9 * * *"
-  timezone: America/New_York
+    - cron: "0 13 * * *"
   workflow_dispatch:
 
 jobs:
