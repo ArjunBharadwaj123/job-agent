@@ -3,6 +3,8 @@ import re
 from datetime import datetime, timedelta, timezone
 from bs4 import BeautifulSoup
 
+import scoring
+
 class SimplifyGitHubScraper:
     SOURCE_NAME = "simplify_github"
 
@@ -82,87 +84,13 @@ class SimplifyGitHubScraper:
 
 
     def _classify_role(self, title: str) -> str:
-        t = title.lower()
-
-        if "intern" in t:
-            return "internship"
-        if "new grad" in t or "graduate" in t:
-            return "new_grad"
-        return "other"
+        return scoring.classify_role(title)
 
     def _compute_relevance_score(self, title: str, location: str) -> int:
-        t = title.lower()
-        loc = location.lower()
-        score = 0
-
-        # Core SWE keywords
-        swe_keywords = {
-            "software", "engineer", "developer",
-            "backend", "frontend", "full stack"
-        }
-
-        ml_keywords = {
-            "machine learning", "ml", "ai",
-            "data", "research"
-        }
-
-        for kw in swe_keywords:
-            if kw in t:
-                score += 30
-
-        for kw in ml_keywords:
-            if kw in t:
-                score += 15
-
-        if "intern" in t:
-            score += 20
-
-        '''
-        # ──────────────────────────────
-        # LOCATION PENALTIES
-        # ──────────────────────────────
-        us_states = {
-            "al","ak","az","ar","ca","co","ct","de","fl","ga",
-            "hi","id","il","in","ia","ks","ky","la","me","md",
-            "ma","mi","mn","ms","mo","mt","ne","nv","nh","nj",
-            "nm","ny","nc","nd","oh","ok","or","pa","ri","sc",
-            "sd","tn","tx","ut","vt","va","wa","wv","wi","wy",
-            "dc"
-        }
-
-        is_remote = "remote" in loc
-        is_us = any(f", {s}" in loc for s in us_states)
-
-        if not is_us and (location == "nyc" or location == "sf" or location == "sfnyc"):
-            is_us = True
-
-        if not is_remote and not is_us:
-            score -= 25   # soft penalty for non-US
-
-        '''
-
-        return max(min(score, 100), 0)
-
+        return scoring.compute_relevance_score(title, location)
 
     def _compute_confidence(self, score: int, passed_filters: bool) -> float:
-        """
-        Confidence reflects certainty AFTER filtering.
-        """
-
-        if not passed_filters:
-            return 0.2  # weak confidence
-
-        if score >= 85:
-            return 0.95
-        if score >= 70:
-            return 0.85
-        if score >= 50:
-            return 0.7
-        if score >= 30:
-            return 0.5
-
-        return 0.3
-
+        return scoring.compute_confidence(score, passed_filters)
 
 
     def _compute_date_posted(self, age_str: str) -> str:
@@ -222,22 +150,7 @@ class SimplifyGitHubScraper:
             if "canada" in location:
                 return False
 
-            us_states = {
-                "al","ak","az","ar","ca","co","ct","de","fl","ga",
-                "hi","id","il","in","ia","ks","ky","la","me","md",
-                "ma","mi","mn","ms","mo","mt","ne","nv","nh","nj",
-                "nm","ny","nc","nd","oh","ok","or","pa","ri","sc",
-                "sd","tn","tx","ut","vt","va","wa","wv","wi","wy",
-                "dc"
-            }
-
-            is_remote = "remote" in location
-            has_state = any(f", {s}" in location for s in us_states)
-
-            if not has_state and (location == "nyc" or location == "sf" or location == "sfnyc"):
-                has_state = True
-
-            if not is_remote and not has_state:
+            if not scoring.is_us_location(location):
                 return False
 
         # ──────────────────────────────

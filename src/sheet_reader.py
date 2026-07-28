@@ -36,6 +36,7 @@ SYSTEM_WRITABLE_COLUMNS = {
     "confidence",
     "archived",
     "last_updated",
+    "semantic_scored",  # whether relevance_score reflects resume-semantic scoring
 }
 
 # Columns that must NEVER be written by the agent
@@ -98,6 +99,18 @@ def read_jobs_sheet():
 
     return headers, rows, column_map
 
+def _is_true(value):
+    """
+    Google Sheets returns boolean-typed cells (e.g. checkboxes) as real
+    JSON booleans, not the string "TRUE" -- but a freshly-appended row
+    written with a raw Python bool round-trips the same way. Handle both
+    so a cell's actual type doesn't matter.
+    """
+    if isinstance(value, bool):
+        return value
+    return str(value).strip().upper() == "TRUE"
+
+
 def build_job_index(rows, column_map):
     """
     Builds:
@@ -115,17 +128,17 @@ def build_job_index(rows, column_map):
         # Defensive reads (cells may be missing)
         job_id = row[column_map["job_id"]] if column_map["job_id"] < len(row) else ""
         applied = (
-            row[column_map["applied"]].upper() == "TRUE"
+            _is_true(row[column_map["applied"]])
             if column_map["applied"] < len(row)
             else False
         )
         locked = (
-            row[column_map["locked"]].upper() == "TRUE"
+            _is_true(row[column_map["locked"]])
             if column_map["locked"] < len(row)
             else False
         )
         archived = (
-            row[column_map["archived"]].upper() == "TRUE"
+            _is_true(row[column_map["archived"]])
             if column_map["archived"] < len(row)
             else False
         )
@@ -471,6 +484,7 @@ def process_raw_job(
                 "relevance_score": raw_job.get("relevance_score", ""),
                 "role_type": raw_job.get("role_type", ""),
                 "confidence": raw_job.get("confidence", ""),
+                "semantic_scored": bool(raw_job.get("semantic_scored", False)),
                 "applied": False,
                 "locked": False,
                 "archived": False,
@@ -516,6 +530,13 @@ def process_raw_job(
         old_value = get_existing(column_name)
         if str(old_value) != str(new_value):
             row_updates[column_name] = new_value
+
+    # If this re-scrape managed to semantic-score the job inline (credits
+    # available), promote the flag FALSE -> TRUE. Never downgrade: a job
+    # already marked scored stays scored even if a later scrape couldn't
+    # reach the embedding API.
+    if raw_job.get("semantic_scored") and not _is_true(get_existing("semantic_scored")):
+        row_updates["semantic_scored"] = True
 
     # Always update heartbeat
     row_updates["last_updated"] = now
