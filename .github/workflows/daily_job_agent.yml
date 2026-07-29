@@ -2,7 +2,10 @@ name: Daily Job Agent
 
 on:
   schedule:
-    - cron: "0 13 * * *"
+    # 14:00 UTC = 9:00 AM EST. NOTE: GitHub cron is fixed UTC and does not
+    # follow daylight saving, so during EDT (mid-Mar–early-Nov) this runs at
+    # 10:00 AM Eastern. Use "0 13 * * *" instead for 9:00 AM during EDT.
+    - cron: "0 14 * * *"
   workflow_dispatch:
 
 jobs:
