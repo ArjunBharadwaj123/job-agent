@@ -181,7 +181,7 @@ class GoogleSearchScraper:
         if candidate.get("schedule_type", "").strip().lower() != "full-time":
             return False
 
-        if settings.get("entry_level_only") and not scoring.is_entry_level(
+        if settings.get("entry_level_only") and not scoring.is_new_grad_or_entry(
             candidate["job_title"], description
         ):
             return False
@@ -200,7 +200,7 @@ class GoogleSearchScraper:
         description = candidate.get("description", "")
 
         score = scoring.compute_relevance_score(title, location)
-        if scoring.is_entry_level(title, description):
+        if scoring.is_new_grad_or_entry(title, description):
             score = min(score + 20, 100)
 
         return {
