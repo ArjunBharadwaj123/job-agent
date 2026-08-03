@@ -66,3 +66,16 @@ jobs:
           NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
         run: |
           PYTHONPATH=src python src/run_google_search_ingestion.py
+
+      # Fallback source: the SimplifyJobs New-Grad-Positions repo (SWE +
+      # AI/ML). `!cancelled()` (instead of the implicit success()) means this
+      # runs even when the Google Search step above failed, so a SerpAPI/Gemini
+      # outage doesn't leave the day with zero jobs. Needs no SerpAPI key.
+      - name: Run New-Grad GitHub ingestion (fallback source)
+        if: steps.guard.outputs.run == 'true' && !cancelled()
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: credentials/service_account.json
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+        run: |
+          PYTHONPATH=src python src/run_new_grad_github_ingestion.py

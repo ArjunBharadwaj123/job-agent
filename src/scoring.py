@@ -136,6 +136,21 @@ _ENTRY_DESC_PHRASES = (
 )
 
 
+def has_senior_title(title: str) -> bool:
+    """
+    True if the TITLE carries a seniority marker (senior/staff/principal/
+    lead/manager/II-V/level 2+/N+ years/...).
+
+    A pure negative gate: unlike is_new_grad_or_entry() it does NOT require a
+    positive entry signal. Meant for already-curated new-grad sources (e.g.
+    the New-Grad-Positions repo), where the list itself vouches that roles are
+    entry-level -- so "Software Engineer 1" should be kept -- but the odd
+    senior title that slips in ("Senior Software Engineer 1") still needs
+    dropping.
+    """
+    return bool(_SENIOR_TITLE_RE.search((title or "").lower()))
+
+
 def is_new_grad_or_entry(title: str, description: str = "") -> bool:
     """
     True only for genuine new-grad / entry-level roles.

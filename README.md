@@ -37,6 +37,24 @@ This project is a job ingestion agent that:
 
 ---
 
+## 🔀 Data Sources
+
+The daily run ingests from two independent sources so results keep flowing even
+if one breaks:
+
+1. **Google Jobs search** (`run_google_search_ingestion.py`) — the primary live
+   source, via SerpAPI, enriched with resume-based semantic scoring (Gemini)
+   and a start-date filter.
+2. **SimplifyJobs New-Grad-Positions repo** (`run_new_grad_github_ingestion.py`)
+   — a resilient fallback that needs **no API keys** (just an HTTP GET of the
+   repo README). It ingests the **Software Engineering** and **Data Science, AI
+   & Machine Learning** new-grad categories (active roles only). It runs every
+   day even when the Google step fails, so a SerpAPI/Gemini outage never leaves
+   the day with zero jobs. These jobs land keyword-scored and are resume-scored
+   over time by the shared backfill pass.
+
+---
+
 ## 🧩 High-Level Architecture
 
 ```
