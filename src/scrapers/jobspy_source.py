@@ -1,7 +1,87 @@
+import logging
+import re
+
 import pandas as pd
 from jobspy import scrape_jobs
 
 import scoring
+
+
+# JobSpy logs each board on its own logger named "JobSpy:<Site>" (with
+# propagate=False), so per-board failures never bubble up as exceptions --
+# a blocked board just returns zero rows. To tell "blocked" apart from
+# "genuinely no results" we attach a handler to each of these loggers and
+# capture their ERROR records (403/429/400/etc.).
+_SITE_LOGGER_NAMES = {
+    "google": "Google",
+    "linkedin": "LinkedIn",
+    "indeed": "Indeed",
+    "glassdoor": "Glassdoor",
+    "zip_recruiter": "ZipRecruiter",
+}
+
+# Pretty names for logs / notifications.
+SITE_DISPLAY = {
+    "google": "Google",
+    "linkedin": "LinkedIn",
+    "indeed": "Indeed",
+    "glassdoor": "Glassdoor",
+    "zip_recruiter": "ZipRecruiter",
+}
+
+_STATUS_CODE_RE = re.compile(r"\b(4\d\d|5\d\d)\b")
+
+
+def _norm(value):
+    return re.sub(r"[^a-z0-9]", "", str(value).lower())
+
+
+# Normalized site key lookups: the DataFrame's `site` column uses values like
+# "zip_recruiter"; the loggers use "ZipRecruiter". Both normalize to the same
+# key so we can match either back to our config key.
+_SITE_BY_NORM = {_norm(k): k for k in _SITE_LOGGER_NAMES}
+_LOGGER_SHORT_TO_KEY = {_norm(v): k for k, v in _SITE_LOGGER_NAMES.items()}
+
+
+def _short_reason(messages):
+    """Extract a concise blocked-reason (e.g. 'HTTP 403') from log messages."""
+    for msg in reversed(messages):
+        match = _STATUS_CODE_RE.search(msg)
+        if match:
+            return f"HTTP {match.group(1)}"
+    if messages:
+        return messages[-1].split(" with response")[0][:60]
+    return ""
+
+
+class _BoardStatusHandler(logging.Handler):
+    """Captures ERROR records from JobSpy per-site loggers, keyed by site."""
+
+    def __init__(self):
+        super().__init__(level=logging.ERROR)
+        self.errors = {}
+
+    def emit(self, record):
+        if record.levelno < logging.ERROR:
+            return
+        short = record.name.split(":")[-1]
+        key = _LOGGER_SHORT_TO_KEY.get(_norm(short))
+        if key:
+            self.errors.setdefault(key, []).append(record.getMessage())
+
+
+def _attach_board_handler(handler):
+    attached = []
+    for short in _SITE_LOGGER_NAMES.values():
+        logger = logging.getLogger(f"JobSpy:{short}")
+        logger.addHandler(handler)
+        attached.append(logger)
+    return attached
+
+
+def _detach_board_handler(handler, attached):
+    for logger in attached:
+        logger.removeHandler(handler)
 
 
 class JobSpyScraper:
@@ -27,26 +107,85 @@ class JobSpyScraper:
     # capped downstream by settings["max_jobs"] in the runner.
     RESULTS_PER_QUERY = 25
 
+    # Per-board outcome of the last run(): {site: {collected, status, reason}}.
+    # status is one of "collected" / "blocked" / "none". Read by the runner
+    # and forwarded to the ntfy notification.
+    board_status: dict = {}
+
     def run(self, settings: dict) -> list[dict]:
         self.settings = settings
 
         titles = settings.get("job_titles", [])
         locations = settings.get("locations", [])
 
+        # Count what each board actually returned (pre-filter) and capture any
+        # block/error logs, so we can report collected-vs-blocked per board.
+        collected = {site: 0 for site in self.SITES}
+        handler = _BoardStatusHandler()
+        attached = _attach_board_handler(handler)
+
         raw_jobs = []
         queries = [(t, loc) for t in titles for loc in locations]
-        for i, (title, location) in enumerate(queries, start=1):
-            print(f"[{i}/{len(queries)}] Scraping: {title}, {location}")
-            df = self._scrape(title, location)
-            for _, row in df.iterrows():
-                candidate = self._parse_row(row, location)
-                if not candidate:
-                    continue
-                if not self._passes_filters(candidate):
-                    continue
-                raw_jobs.append(self._build_raw_job(candidate))
+        try:
+            for i, (title, location) in enumerate(queries, start=1):
+                print(f"[{i}/{len(queries)}] Scraping: {title}, {location}")
+                df = self._scrape(title, location)
+                self._tally_collected(df, collected)
+                for _, row in df.iterrows():
+                    candidate = self._parse_row(row, location)
+                    if not candidate:
+                        continue
+                    if not self._passes_filters(candidate):
+                        continue
+                    raw_jobs.append(self._build_raw_job(candidate))
+        finally:
+            _detach_board_handler(handler, attached)
 
+        self.board_status = self._summarize_boards(collected, handler.errors)
+        self._print_board_status()
         return raw_jobs
+
+    # ----------------------------
+    # Per-board status tracking
+    # ----------------------------
+
+    def _tally_collected(self, df, collected):
+        if df is None or df.empty or "site" not in df.columns:
+            return
+        for value, count in df["site"].value_counts().items():
+            key = _SITE_BY_NORM.get(_norm(value))
+            if key in collected:
+                collected[key] += int(count)
+
+    def _summarize_boards(self, collected, errors):
+        status = {}
+        for site in self.SITES:
+            count = collected.get(site, 0)
+            errs = errors.get(site, [])
+            if count > 0:
+                state = "collected"
+            elif errs:
+                state = "blocked"
+            else:
+                state = "none"
+            status[site] = {
+                "collected": count,
+                "status": state,
+                "reason": _short_reason(errs) if state == "blocked" else "",
+            }
+        return status
+
+    def _print_board_status(self):
+        print("Board status:")
+        for site, info in self.board_status.items():
+            name = SITE_DISPLAY.get(site, site)
+            if info["status"] == "collected":
+                print(f"  {name}: collected {info['collected']}")
+            elif info["status"] == "blocked":
+                reason = f" ({info['reason']})" if info["reason"] else ""
+                print(f"  {name}: BLOCKED{reason}")
+            else:
+                print(f"  {name}: no results")
 
     # ----------------------------
     # Scraping

@@ -129,6 +129,9 @@ results["backfilled"] = backfill_unscored(
 )
 
 # ----------------------------
-# Notify (ntfy.sh) — only fires when new jobs were added and NTFY_TOPIC is set
+# Notify (ntfy.sh) — only fires when new jobs were added and NTFY_TOPIC is set.
+# Attach the per-board collected-vs-blocked breakdown so the phone alert shows
+# which job boards actually returned data and which were blocked this run.
 # ----------------------------
+results["board_status"] = getattr(scraper, "board_status", {})
 notify_summary(results)
