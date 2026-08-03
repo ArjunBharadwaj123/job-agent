@@ -2,6 +2,10 @@
 requests>=2.31.0
 beautifulsoup4>=4.12.3
 
+# Multi-board job scraping (LinkedIn, Indeed, Glassdoor, ZipRecruiter,
+# Google Jobs). Primary data source; pulls in pandas, pydantic, tls-client.
+python-jobspy>=1.1.80
+
 # Google Sheets API
 google-api-python-client>=2.120.0
 google-auth>=2.28.0
