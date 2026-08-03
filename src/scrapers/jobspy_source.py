@@ -257,6 +257,10 @@ class JobSpyScraper:
         is_remote = bool(row.get("is_remote")) if pd.notna(
             row.get("is_remote")
         ) else False
+        # The actual board JobSpy scraped this row from (linkedin, indeed,
+        # glassdoor, zip_recruiter, google) -- used as the `source`.
+        site_raw = self._clean(row.get("site"))
+        source = _SITE_BY_NORM.get(_norm(site_raw), site_raw) or self.SOURCE_NAME
 
         if not title or not company or not link:
             return None
@@ -269,6 +273,7 @@ class JobSpyScraper:
             "description": description,
             "date_posted": date_posted,
             "is_remote": is_remote,
+            "source": source,
         }
 
     @staticmethod
@@ -354,7 +359,9 @@ class JobSpyScraper:
             "company": candidate["company"],
             "location": location,
             "job_url": candidate["job_url"],
-            "source": self.SOURCE_NAME,
+            # The board this posting actually came from (e.g. "linkedin",
+            # "indeed"), not a generic "jobspy" tag.
+            "source": candidate.get("source") or self.SOURCE_NAME,
             "date_posted": candidate.get("date_posted", ""),
             # Not a sheet column -- read by the runner for semantic scoring /
             # start-date filtering without a separate page fetch, since
