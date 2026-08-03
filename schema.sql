@@ -30,7 +30,13 @@ CREATE TABLE IF NOT EXISTS jobs (
     notes              TEXT,
     -- latest actionable link surfaced from an application email
     action_type        TEXT,      -- 'assessment' | 'interview' | NULL
-    action_url         TEXT
+    action_url         TEXT,
+    -- AI enrichment (populated lazily by the dashboard on first view)
+    description        TEXT,
+    summary            TEXT,      -- brief role summary
+    company_summary    TEXT,
+    skills             TEXT,      -- JSON array of skill strings
+    enriched_at        TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_jobs_status  ON jobs(application_status);
