@@ -31,6 +31,16 @@ SITE_DISPLAY = {
 
 _STATUS_CODE_RE = re.compile(r"\b(4\d\d|5\d\d)\b")
 
+# Trailing country tokens (after lowercasing + punctuation removal) that
+# different boards append to locations. Stripped so the dedup identity
+# matches across boards. See JobSpyScraper._normalize_location.
+_COUNTRY_TOKENS = {
+    "us",
+    "usa",
+    "united states",
+    "united states of america",
+}
+
 
 def _norm(value):
     return re.sub(r"[^a-z0-9]", "", str(value).lower())
@@ -235,7 +245,9 @@ class JobSpyScraper:
     def _parse_row(self, row, query_location):
         title = self._clean(row.get("title"))
         company = self._clean(row.get("company"))
-        location = self._clean(row.get("location")) or query_location
+        location = self._normalize_location(
+            self._clean(row.get("location")) or query_location
+        )
         # Prefer the direct employer link when JobSpy resolved one.
         link = self._clean(row.get("job_url_direct")) or self._clean(
             row.get("job_url")
@@ -264,6 +276,30 @@ class JobSpyScraper:
         if value is None or (not isinstance(value, str) and pd.isna(value)):
             return ""
         return str(value).strip()
+
+    @staticmethod
+    def _normalize_location(location):
+        """
+        Canonicalize a location so the same real job doesn't dedupe as two
+        rows across boards. Different boards tack on a trailing country token
+        ("New York, NY, US" vs "New York, NY"); we strip trailing
+        country-only (or empty) comma segments so the identity triple
+        (company, title, location) matches. Genuinely different cities/states
+        are preserved, and a location that is ONLY a country (e.g. nationwide
+        "United States") is kept rather than emptied.
+        """
+        if not location:
+            return ""
+
+        parts = [p.strip() for p in location.split(",")]
+        while len(parts) > 1:
+            tail = re.sub(r"[^\w\s]", "", parts[-1].lower())
+            tail = re.sub(r"\s+", " ", tail).strip()
+            if tail == "" or tail in _COUNTRY_TOKENS:
+                parts.pop()
+            else:
+                break
+        return ", ".join(parts).strip()
 
     @staticmethod
     def _parse_date(value):
