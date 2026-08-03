@@ -117,6 +117,13 @@ class JobSpyScraper:
     # capped downstream by settings["max_jobs"] in the runner.
     RESULTS_PER_QUERY = 25
 
+    # Circuit breaker: after a board hard-fails (block/error + zero rows) this
+    # many queries in a row, drop it for the rest of the run instead of
+    # re-requesting it every query. Boards like Glassdoor/ZipRecruiter that are
+    # WAF-blocked otherwise get hammered once per (title x location) combo,
+    # which dominates run time (JobSpy retries/backs off on each 403/400).
+    FAIL_LIMIT = 2
+
     # Per-board outcome of the last run(): {site: {collected, status, reason}}.
     # status is one of "collected" / "blocked" / "none". Read by the runner
     # and forwarded to the ntfy notification.
@@ -134,13 +141,35 @@ class JobSpyScraper:
         handler = _BoardStatusHandler()
         attached = _attach_board_handler(handler)
 
+        # Circuit-breaker state: which boards are still worth querying.
+        active_sites = list(self.SITES)
+        consecutive_fail = {site: 0 for site in self.SITES}
+
         raw_jobs = []
         queries = [(t, loc) for t in titles for loc in locations]
         try:
             for i, (title, location) in enumerate(queries, start=1):
+                if not active_sites:
+                    print("All boards disabled (blocked); stopping scrape early.")
+                    break
+
                 print(f"[{i}/{len(queries)}] Scraping: {title}, {location}")
-                df = self._scrape(title, location)
+
+                # Snapshot error counts so we can tell which boards failed
+                # *this* query (handler.errors accumulates across the run).
+                err_before = {
+                    s: len(handler.errors.get(s, [])) for s in active_sites
+                }
+
+                df = self._scrape(title, location, active_sites)
                 self._tally_collected(df, collected)
+
+                counts_this = self._counts_by_site(df)
+                self._update_circuit_breaker(
+                    active_sites, consecutive_fail, counts_this,
+                    handler.errors, err_before,
+                )
+
                 for _, row in df.iterrows():
                     candidate = self._parse_row(row, location)
                     if not candidate:
@@ -154,6 +183,33 @@ class JobSpyScraper:
         self.board_status = self._summarize_boards(collected, handler.errors)
         self._print_board_status()
         return raw_jobs
+
+    def _counts_by_site(self, df):
+        counts = {}
+        if df is None or df.empty or "site" not in df.columns:
+            return counts
+        for value, count in df["site"].value_counts().items():
+            key = _SITE_BY_NORM.get(_norm(value))
+            if key:
+                counts[key] = int(count)
+        return counts
+
+    def _update_circuit_breaker(
+        self, active_sites, consecutive_fail, counts_this, errors, err_before
+    ):
+        for site in list(active_sites):
+            errored = len(errors.get(site, [])) > err_before.get(site, 0)
+            if counts_this.get(site, 0) > 0:
+                consecutive_fail[site] = 0
+            elif errored:
+                consecutive_fail[site] += 1
+                if consecutive_fail[site] >= self.FAIL_LIMIT:
+                    active_sites.remove(site)
+                    print(
+                        f"  Disabling {SITE_DISPLAY.get(site, site)} for the "
+                        f"rest of this run after {self.FAIL_LIMIT} blocked "
+                        f"attempts"
+                    )
 
     # ----------------------------
     # Per-board status tracking
@@ -201,10 +257,10 @@ class JobSpyScraper:
     # Scraping
     # ----------------------------
 
-    def _scrape(self, title, location):
+    def _scrape(self, title, location, sites):
         try:
             df = scrape_jobs(
-                site_name=self.SITES,
+                site_name=sites,
                 search_term=title,
                 google_search_term=f"{title} jobs near {location}",
                 location=location,
@@ -212,9 +268,13 @@ class JobSpyScraper:
                 job_type="fulltime",
                 # Indeed/Glassdoor require a country; US-centric either way.
                 country_indeed="usa",
-                # LinkedIn omits descriptions unless we fetch each posting.
-                # We need them for semantic scoring downstream.
-                linkedin_fetch_description=True,
+                # Deliberately DON'T fetch LinkedIn descriptions here: it costs
+                # one extra rate-limited request per posting, and we scrape far
+                # more jobs than we keep (results are capped to max_jobs
+                # downstream). The runner fetches descriptions lazily via
+                # description_fetcher for only the capped set, so we pay that
+                # cost ~max_jobs times instead of thousands.
+                linkedin_fetch_description=False,
                 description_format="markdown",
                 hours_old=self._hours_old(),
                 verbose=0,
