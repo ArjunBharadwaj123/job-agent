@@ -1,34 +1,26 @@
-from google.oauth2.service_account import Credentials
-from googleapiclient.discovery import build
+"""
+Daily scrape -> score -> Turso. Repointed from the Google Sheet to the libSQL
+datastore (see store.py). The scraping + scoring pipeline is unchanged; only
+persistence (settings, resume, write, backfill) now goes through `store`.
+"""
 
 from scrapers.jobspy_source import JobSpyScraper
-from settings_reader import read_settings
-from sheet_reader import refresh_jobs, get_sheet_id
 from description_fetcher import fetch_job_description
 from semantic_scoring import SemanticScorer
-from resume_reader import read_resume
 from notifier import notify_summary
-from semantic_backfill import backfill_unscored
 import scoring
+import store
+
+# Sources eligible for resume-score backfill (JobSpy boards + legacy sources).
+BACKFILL_SOURCES = [
+    "linkedin", "indeed", "glassdoor", "zip_recruiter", "google",
+    "google_search", "new_grad_github",
+]
 
 # ----------------------------
-# Config
+# Load settings + resume from Turso
 # ----------------------------
-SPREADSHEET_ID = "1urLLyn7yg6W17l2OsRhonKP6E2wR-8pNF1e8ByKm848"
-SHEET_NAME = "Jobs"
-CREDENTIALS_FILE = "credentials/service_account.json"
-
-# ----------------------------
-# Auth
-# ----------------------------
-creds = Credentials.from_service_account_file(
-    CREDENTIALS_FILE,
-    scopes=["https://www.googleapis.com/auth/spreadsheets"],
-)
-
-service = build("sheets", "v4", credentials=creds)
-sheet_id = get_sheet_id(service, SPREADSHEET_ID, SHEET_NAME)
-settings = read_settings()
+settings = store.get_settings()
 print("Loaded settings:", settings)
 
 # ----------------------------
@@ -40,58 +32,45 @@ raw_jobs = scraper.run(settings)
 # 🔒 HARD CAP — REQUIRED
 MAX_JOBS = settings["max_jobs"]
 raw_jobs = raw_jobs[:MAX_JOBS]
-
 print(f"Processing {len(raw_jobs)} jobs (max_jobs={MAX_JOBS})")
 
 # ----------------------------
-# Description-dependent enrichment: semantic scoring (optional — needs
-# resume.txt + GEMINI_API_KEY) and the min_start_date filter (optional —
-# needs a min_start_date setting). JobSpy results already include a full
-# description, so we only fall back to fetching the posting page ourselves
-# if that field happens to be missing.
+# Description-dependent enrichment: semantic scoring (optional — needs resume
+# + GEMINI_API_KEY) and the min_start_date filter. JobSpy no longer pre-fetches
+# LinkedIn descriptions, so this fetches the posting page for jobs missing one.
 # ----------------------------
-scorer = SemanticScorer(resume_text=read_resume())
+scorer = SemanticScorer(resume_text=store.get_resume())
 min_start_date = settings.get("min_start_date")
 
 if scorer.available:
-    print("Semantic scoring enabled — scoring descriptions against resume.txt")
+    print("Semantic scoring enabled — scoring descriptions against resume")
 else:
-    print("Semantic scoring skipped (no resume.txt and/or GEMINI_API_KEY set)")
+    print("Semantic scoring skipped (no resume and/or GEMINI_API_KEY set)")
 
 if min_start_date:
     print(f"Start-date filter enabled — excluding jobs starting before {min_start_date}")
 
 if scorer.available or min_start_date:
     kept_jobs = []
-
     for i, job in enumerate(raw_jobs, start=1):
         description = job.pop("description", "")
-
         if not description:
-            print(f"[{i}/{len(raw_jobs)}] No description from search result, fetching page: {job['company']} - {job['job_title']}")
+            print(f"[{i}/{len(raw_jobs)}] Fetching description: {job['company']} - {job['job_title']}")
             fetched = fetch_job_description(job["job_url"])
             description = fetched["description"]
             if not job.get("date_posted") and fetched["date_posted"]:
                 job["date_posted"] = fetched["date_posted"]
 
-        if min_start_date:
-            # Smart new-grad gate: drops jobs whose start date OR target
-            # grad year is before min_start_date, plus explicit "start ASAP"
-            # roles; keeps genuinely-undated postings (see scoring docstring).
-            if not scoring.passes_start_date_filter(
-                job["job_title"], description, min_start_date
-            ):
-                continue
+        if min_start_date and not scoring.passes_start_date_filter(
+            job["job_title"], description, min_start_date
+        ):
+            continue
 
         if scorer.available:
             semantic_score = scorer.score(description)
-            blended_score = scoring.blend_scores(job["relevance_score"], semantic_score)
-            job["relevance_score"] = blended_score
-            job["confidence"] = scoring.compute_confidence(blended_score, True)
-            # Mark whether the resume comparison actually happened this run.
-            # None => embedding unavailable (e.g. Gemini credits depleted);
-            # the job lands keyword-only and the backfill pass retries it
-            # once credits return.
+            blended = scoring.blend_scores(job["relevance_score"], semantic_score)
+            job["relevance_score"] = blended
+            job["confidence"] = scoring.compute_confidence(blended, True)
             job["semantic_scored"] = semantic_score is not None
 
         kept_jobs.append(job)
@@ -103,35 +82,37 @@ else:
         job.pop("description", None)
 
 # ----------------------------
-# Write to sheet
+# Write to Turso (upsert; user-owned columns and locked rows are preserved)
 # ----------------------------
-results = refresh_jobs(
-    raw_jobs=raw_jobs,
-    service=service,
-    spreadsheet_id=SPREADSHEET_ID,
-    sheet_name=SHEET_NAME,
-    sheet_id=sheet_id,
-)
-
+results = store.upsert_jobs(raw_jobs)
 print("Results:", results)
 
 # ----------------------------
 # Backfill: resume-score previously-unscored jobs (fail-safe for past runs
-# where Gemini credits were unavailable). New jobs above were scored first
-# and have priority; this drains the backlog gradually, bounded per run.
+# where Gemini credits were unavailable), newest-first, bounded per run.
 # ----------------------------
-results["backfilled"] = backfill_unscored(
-    scorer=scorer,
-    service=service,
-    spreadsheet_id=SPREADSHEET_ID,
-    sheet_name=SHEET_NAME,
-    max_backfill=settings.get("max_backfill", 25),
-)
+results["backfilled"] = 0
+if scorer.available:
+    candidates = store.get_unscored_jobs(
+        sources=BACKFILL_SOURCES, limit=settings.get("max_backfill", 25)
+    )
+    print(f"Backfill: {len(candidates)} unscored jobs to process")
+    for job in candidates:
+        fetched = fetch_job_description(job["job_url"])
+        description = fetched["description"]
+        if not description:
+            continue
+        semantic_score = scorer.score(description)
+        if semantic_score is None:
+            print("Backfill stopped early (embedding unavailable)")
+            break
+        blended = scoring.blend_scores(job["relevance_score"], semantic_score)
+        store.promote_scores(job["job_id"], blended, scoring.compute_confidence(blended, True))
+        results["backfilled"] += 1
+    print(f"Backfill: {results['backfilled']} job(s) resume-scored this run")
 
 # ----------------------------
-# Notify (ntfy.sh) — only fires when new jobs were added and NTFY_TOPIC is set.
-# Attach the per-board collected-vs-blocked breakdown so the phone alert shows
-# which job boards actually returned data and which were blocked this run.
+# Notify (ntfy.sh) — per-board collected-vs-blocked status + counts
 # ----------------------------
 results["board_status"] = getattr(scraper, "board_status", {})
 notify_summary(results)
