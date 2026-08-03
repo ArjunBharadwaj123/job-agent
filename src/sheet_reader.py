@@ -583,6 +583,7 @@ def refresh_jobs(
     }
 
     new_jobs = []
+    appended_ids = set()
 
     for raw_job in raw_jobs:
         result = process_raw_job(
@@ -598,6 +599,17 @@ def refresh_jobs(
         )
 
         if isinstance(result, dict) and result.get("action") == "new":
+            # Intra-run dedupe: the same posting can surface from multiple
+            # queries in a single run. job_index was built once before this
+            # loop and isn't updated as we stage new rows, so a second copy
+            # also comes back as "new". Guard here so we never append two
+            # rows sharing a job_id (keeps the sheet idempotent within a run,
+            # not just across runs).
+            job_id = result["job_data"]["job_id"]
+            if job_id in appended_ids:
+                results["exists"] += 1
+                continue
+            appended_ids.add(job_id)
             new_jobs.append(result["job_data"])
             results["appended"] += 1
         else:

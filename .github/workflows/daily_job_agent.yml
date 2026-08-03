@@ -2,9 +2,13 @@ name: Daily Job Agent
 
 on:
   schedule:
-    # 14:00 UTC = 9:00 AM EST. NOTE: GitHub cron is fixed UTC and does not
-    # follow daylight saving, so during EDT (mid-Mar–early-Nov) this runs at
-    # 10:00 AM Eastern. Use "0 13 * * *" instead for 9:00 AM during EDT.
+    # True 9:00 AM Eastern year-round. GitHub cron is fixed UTC and does not
+    # follow daylight saving, so we register BOTH offsets and let the "guard"
+    # step below run the job only when it's actually 09:xx in New York:
+    #   13:00 UTC = 9am EDT (summer)   14:00 UTC = 9am EST (winter)
+    # Exactly one of these is 9am ET on any given day; the other skips.
+    # NOTE: scheduled triggers only fire from the DEFAULT branch (main).
+    - cron: "0 13 * * *"
     - cron: "0 14 * * *"
   workflow_dispatch:
 
@@ -13,23 +17,40 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Gate to 9am America/New_York
+        id: guard
+        run: |
+          H=$(TZ=America/New_York date +%H)
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] || [ "$H" = "09" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            echo "Proceeding (event=${{ github.event_name }}, ET hour=$H)."
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "Not 9am ET (hour=$H) — skipping this trigger."
+          fi
+
       - name: Checkout repository
+        if: steps.guard.outputs.run == 'true'
         uses: actions/checkout@v4
 
       - name: Set up Python
+        if: steps.guard.outputs.run == 'true'
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
       - name: Upgrade pip tooling
+        if: steps.guard.outputs.run == 'true'
         run: |
           python -m pip install --upgrade pip setuptools packaging
 
       - name: Install dependencies
+        if: steps.guard.outputs.run == 'true'
         run: |
           pip install -r requirements.txt
 
       - name: Write Google credentials
+        if: steps.guard.outputs.run == 'true'
         run: |
           mkdir -p credentials
           cat <<EOF > credentials/service_account.json
@@ -37,6 +58,7 @@ jobs:
           EOF
 
       - name: Run Google Search ingestion job agent
+        if: steps.guard.outputs.run == 'true'
         env:
           GOOGLE_APPLICATION_CREDENTIALS: credentials/service_account.json
           SERPAPI_API_KEY: ${{ secrets.SERPAPI_API_KEY }}
@@ -44,3 +66,16 @@ jobs:
           NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
         run: |
           PYTHONPATH=src python src/run_google_search_ingestion.py
+
+      # Fallback source: the SimplifyJobs New-Grad-Positions repo (SWE +
+      # AI/ML). `!cancelled()` (instead of the implicit success()) means this
+      # runs even when the Google Search step above failed, so a SerpAPI/Gemini
+      # outage doesn't leave the day with zero jobs. Needs no SerpAPI key.
+      - name: Run New-Grad GitHub ingestion (fallback source)
+        if: steps.guard.outputs.run == 'true' && !cancelled()
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: credentials/service_account.json
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+        run: |
+          PYTHONPATH=src python src/run_new_grad_github_ingestion.py

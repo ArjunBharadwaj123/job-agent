@@ -93,6 +93,86 @@ def is_entry_level(title: str, snippet: str = "") -> bool:
     return any(kw in text for kw in ENTRY_LEVEL_KEYWORDS)
 
 
+# ---------------------------------------------------------------------------
+# Strict new-grad / entry-level gate (used by the google_search pipeline).
+#
+# is_entry_level() above is lenient and, when fed a full job description,
+# false-positives badly: generic words like "graduate"/"associate" appear in
+# many mid/senior descriptions. This gate judges SENIORITY from the title
+# only (titles are clean; descriptions are noise), recognizes level markers
+# the old list missed (II/III/IV, "Level 3", "Sr", "3+ years"), and only
+# rescues a plain-titled role when the description carries a *strong*
+# new-grad phrase -- never on a bare "graduate"/"associate".
+# ---------------------------------------------------------------------------
+
+# Seniority markers in a TITLE -> not entry-level. Longest roman numerals
+# first so "\biii\b" wins over "\bii\b".
+_SENIOR_TITLE_RE = re.compile(
+    r"\b(?:senior|sr\.?|staff|principal|lead|manager|director|head\s+of|"
+    r"experienced|mid[-\s]?level|"
+    r"iv|iii|ii|v|"                       # roman numerals II-V (levels)
+    r"level\s*[2-9]|l[2-9]|"              # "Level 3" / "L4"
+    r"[3-9]\+?\s*years?|1\d\+?\s*years?)\b",
+    re.IGNORECASE,
+)
+
+# Positive entry signal in a TITLE.
+_ENTRY_TITLE_RE = re.compile(
+    r"\b(?:entry[-\s]?level|junior|jr\.?|new\s*grad(?:uate)?|recent\s+graduate|"
+    r"associate|graduate|campus|early[-\s]?career|university\s+graduate|"
+    r"college\s+graduate|apprentice|trainee|intern|rotational|"
+    r"(?:engineer|developer|analyst)\s*i)\b",   # "... Engineer I" (level 1)
+    re.IGNORECASE,
+)
+
+# Strong new-grad phrases that may rescue a plain-titled role from its
+# DESCRIPTION. Deliberately excludes the bare words "graduate"/"associate"
+# that caused the false positives.
+_ENTRY_DESC_PHRASES = (
+    "new grad", "new graduate", "recent graduate", "recent college graduate",
+    "entry level", "entry-level", "early career", "early-career",
+    "university graduate", "college graduate", "campus hire",
+    "0-1 years", "0-2 years", "no experience required", "class of 20",
+)
+
+
+def has_senior_title(title: str) -> bool:
+    """
+    True if the TITLE carries a seniority marker (senior/staff/principal/
+    lead/manager/II-V/level 2+/N+ years/...).
+
+    A pure negative gate: unlike is_new_grad_or_entry() it does NOT require a
+    positive entry signal. Meant for already-curated new-grad sources (e.g.
+    the New-Grad-Positions repo), where the list itself vouches that roles are
+    entry-level -- so "Software Engineer 1" should be kept -- but the odd
+    senior title that slips in ("Senior Software Engineer 1") still needs
+    dropping.
+    """
+    return bool(_SENIOR_TITLE_RE.search((title or "").lower()))
+
+
+def is_new_grad_or_entry(title: str, description: str = "") -> bool:
+    """
+    True only for genuine new-grad / entry-level roles.
+
+    - A seniority marker in the TITLE is disqualifying (checked first).
+    - Else an entry signal in the TITLE qualifies.
+    - Else a *strong* new-grad phrase in the DESCRIPTION rescues an
+      otherwise-plain title (so a "Software Engineer" req that says
+      "New Grad, Class of 2027" is kept, but a generic one is dropped).
+    """
+    t = (title or "").lower()
+
+    if _SENIOR_TITLE_RE.search(t):
+        return False
+
+    if _ENTRY_TITLE_RE.search(t):
+        return True
+
+    d = (description or "").lower()
+    return any(phrase in d for phrase in _ENTRY_DESC_PHRASES)
+
+
 def compute_relevance_score(title: str, location: str) -> int:
     t = title.lower()
     score = 0
