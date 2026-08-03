@@ -17,7 +17,7 @@ function rows<T>(rs: ResultSet): T[] {
 
 export async function getJobs(): Promise<Job[]> {
   const rs = await db.execute(
-    `SELECT * FROM jobs WHERE archived = 0 ORDER BY relevance_score DESC, date_found DESC`
+    `SELECT * FROM jobs WHERE archived = 0 ORDER BY date_found DESC, relevance_score DESC`
   );
   return rows<Job>(rs);
 }
@@ -120,6 +120,101 @@ export async function updateUserFields(jobId: string, patch: UserFieldUpdate) {
   }
 
   return getJob(jobId);
+}
+
+// Lazy AI enrichment: fetch a posting's text if we don't have one, ask Gemini
+// for a summary/company blurb/skills, cache it on the row, and return the job.
+export async function enrichJobIfNeeded(jobId: string): Promise<Job | null> {
+  const { enrichJob } = await import("./gemini");
+  const { fetchJobText } = await import("./fetchJob");
+
+  const job = await getJob(jobId);
+  if (!job) return null;
+  if (job.enriched_at) return job; // already enriched
+
+  let description = job.description || "";
+  if (!description && job.job_url) {
+    description = await fetchJobText(job.job_url);
+  }
+
+  const enrichment = await enrichJob({
+    company: job.company,
+    title: job.job_title,
+    location: job.location,
+    description,
+  });
+  if (!enrichment) return job; // Gemini unavailable — return as-is
+
+  const now = new Date().toISOString();
+  await db.execute({
+    sql: `UPDATE jobs SET description = ?, summary = ?, company_summary = ?,
+                 skills = ?, enriched_at = ? WHERE job_id = ?`,
+    args: [
+      description || null,
+      enrichment.summary || null,
+      enrichment.company_summary || null,
+      JSON.stringify(enrichment.skills || []),
+      now,
+      jobId,
+    ],
+  });
+  return getJob(jobId);
+}
+
+export interface ProgressData {
+  daily: { iso: string; label: string; count: number; cumulative: number }[];
+  total: number;
+  activeDays: number;
+  avgPerDay: number;
+  statusCounts: Record<string, number>;
+}
+
+// date_applied is stored as US-style M/D/YYYY -> normalize to YYYY-MM-DD.
+function toIso(raw: string): string | null {
+  const parts = raw.trim().split("/");
+  if (parts.length !== 3) return null;
+  const [m, d, y] = parts.map((p) => parseInt(p, 10));
+  if (!m || !d || !y) return null;
+  return `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+}
+
+export async function getProgress(): Promise<ProgressData> {
+  const rs = await db.execute(
+    `SELECT date_applied FROM jobs WHERE applied = 1 AND date_applied IS NOT NULL AND date_applied != ''`
+  );
+  const counts = new Map<string, number>();
+  for (const row of rs.rows) {
+    const iso = toIso((row as unknown as { date_applied: string }).date_applied);
+    if (!iso) continue;
+    counts.set(iso, (counts.get(iso) ?? 0) + 1);
+  }
+  const isoKeys = [...counts.keys()].sort();
+  let cum = 0;
+  const daily = isoKeys.map((iso) => {
+    const count = counts.get(iso)!;
+    cum += count;
+    const [, m, d] = iso.split("-");
+    return { iso, label: `${Number(m)}/${Number(d)}`, count, cumulative: cum };
+  });
+  const total = cum;
+  const activeDays = isoKeys.length;
+
+  const statusRs = await db.execute(
+    `SELECT application_status AS s, COUNT(*) AS c FROM jobs GROUP BY application_status`
+  );
+  const statusCounts: Record<string, number> = {};
+  for (const r of statusRs.rows) {
+    const row = r as unknown as { s: string; c: number };
+    statusCounts[row.s] = Number(row.c);
+  }
+
+  return {
+    daily,
+    total,
+    activeDays,
+    avgPerDay: activeDays ? Math.round((total / activeDays) * 10) / 10 : 0,
+    statusCounts,
+  };
 }
 
 export interface JobFacets {

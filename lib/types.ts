@@ -64,6 +64,11 @@ export interface Job {
   notes: string | null;
   action_type: string | null;
   action_url: string | null;
+  description: string | null;
+  summary: string | null;
+  company_summary: string | null;
+  skills: string | null;
+  enriched_at: string | null;
 }
 
 export interface StatusEvent {
