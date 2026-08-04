@@ -184,7 +184,7 @@ _JOB_COLUMNS = [
     "date_posted", "date_found", "relevance_score", "role_type", "confidence",
     "semantic_scored", "archived", "last_updated", "locked", "applied",
     "date_applied", "application_status", "priority", "notes",
-    "action_type", "action_url",
+    "action_type", "action_url", "description_snippet",
 ]
 
 

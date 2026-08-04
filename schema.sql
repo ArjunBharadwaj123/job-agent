@@ -31,6 +31,8 @@ CREATE TABLE IF NOT EXISTS jobs (
     -- latest actionable link surfaced from an application email
     action_type        TEXT,      -- 'assessment' | 'interview' | NULL
     action_url         TEXT,
+    -- short snippet from the scraper (legacy Google-search source field)
+    description_snippet TEXT,
     -- AI enrichment (populated lazily by the dashboard on first view)
     description        TEXT,
     summary            TEXT,      -- brief role summary

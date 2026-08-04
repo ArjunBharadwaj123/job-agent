@@ -84,6 +84,7 @@ def migrate_jobs(conn):
             "notes": cell(row, "notes"),
             "action_type": None,
             "action_url": None,
+            "description_snippet": cell(row, "description_snippet"),
         }
         store.replace_job_full(record, conn)
         count += 1
