@@ -122,11 +122,13 @@ export async function updateUserFields(jobId: string, patch: UserFieldUpdate) {
   return getJob(jobId);
 }
 
-// Lazy AI enrichment: fetch a posting's text if we don't have one, ask Gemini
-// for a summary/company blurb/skills, cache it on the row, and return the job.
+// Lazy, keyless enrichment: fetch the posting text (if we don't have it),
+// derive a brief + skills from it, pull a company blurb from Wikipedia, cache
+// it on the row, and return the job. No LLM / API key required.
 export async function enrichJobIfNeeded(jobId: string): Promise<Job | null> {
-  const { enrichJob } = await import("./gemini");
   const { fetchJobText } = await import("./fetchJob");
+  const { extractSkills, briefFromText } = await import("./skills");
+  const { wikiSummary } = await import("./wikipedia");
 
   const job = await getJob(jobId);
   if (!job) return null;
@@ -137,13 +139,11 @@ export async function enrichJobIfNeeded(jobId: string): Promise<Job | null> {
     description = await fetchJobText(job.job_url);
   }
 
-  const enrichment = await enrichJob({
-    company: job.company,
-    title: job.job_title,
-    location: job.location,
-    description,
-  });
-  if (!enrichment) return job; // Gemini unavailable — return as-is
+  const [companySummary, skills, brief] = await Promise.all([
+    wikiSummary(job.company),
+    Promise.resolve(extractSkills(`${description} ${job.job_title}`)),
+    Promise.resolve(briefFromText(description)),
+  ]);
 
   const now = new Date().toISOString();
   await db.execute({
@@ -151,9 +151,9 @@ export async function enrichJobIfNeeded(jobId: string): Promise<Job | null> {
                  skills = ?, enriched_at = ? WHERE job_id = ?`,
     args: [
       description || null,
-      enrichment.summary || null,
-      enrichment.company_summary || null,
-      JSON.stringify(enrichment.skills || []),
+      brief || null,
+      companySummary || null,
+      JSON.stringify(skills),
       now,
       jobId,
     ],

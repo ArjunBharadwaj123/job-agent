@@ -55,10 +55,6 @@ export default function JobQuickView({
     }
   })();
 
-  // Enrichment attempted but no result cached => Gemini unavailable (e.g.
-  // depleted credits). Distinguish this from a genuinely empty summary.
-  const aiUnavailable = !enriching && !data.enriched_at;
-
   async function setStatus(status: string) {
     await fetch(`/api/jobs/${job!.job_id}`, {
       method: "PATCH",
@@ -110,12 +106,6 @@ export default function JobQuickView({
         </div>
 
         <div className="space-y-5 p-5">
-          {aiUnavailable && (
-            <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300">
-              AI summaries are unavailable right now (Gemini API credits depleted). They&apos;ll
-              generate automatically once credits are restored.
-            </div>
-          )}
           {/* Company */}
           <Section title="Company" accent="fuchsia">
             {enriching && !data.company_summary ? (
