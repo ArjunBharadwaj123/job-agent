@@ -36,8 +36,10 @@ def main():
     }
 
     flow = InstalledAppFlow.from_client_config(client_config, SCOPES)
-    # Opens a browser; prompt=consent forces a refresh_token to be returned.
-    creds = flow.run_local_server(port=0, prompt="consent", access_type="offline")
+    # Fixed port so a "Web application" client can register one redirect URI
+    # (http://localhost:8765/). A "Desktop app" client works regardless.
+    # prompt=consent forces a refresh_token to be returned.
+    creds = flow.run_local_server(port=8765, prompt="consent", access_type="offline")
 
     print("\n" + "=" * 60)
     print("SUCCESS — add this to .env and to GitHub Actions secrets:")

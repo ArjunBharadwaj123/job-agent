@@ -14,6 +14,19 @@ from notifier import notify
 
 CONFIDENCE_THRESHOLD = 0.75
 
+# Job-board / newsletter / marketing senders that mention many companies but
+# never carry status updates about YOUR applications. Skipped before matching.
+_NOISE_DOMAINS = (
+    "bebee.com", "monster.com", "jobleads.com", "whatjobs.com", "ziprecruiter.com",
+    "glassdoor.com", "indeed.com", "interviewkickstart.com", "thermofisher.com",
+    "jobcase.com", "talent.com", "lever.co/newsletter", "getro.com", "ripplematch.com",
+)
+
+
+def _is_noise(email):
+    dom = email.get("from_domain", "")
+    return any(dom == d or dom.endswith("." + d) for d in _NOISE_DOMAINS)
+
 # Pipeline ordering: only advance forward, and rejected/accepted are terminal
 # (can be reached from any stage but not overwritten once set).
 _ORDER = {
@@ -68,12 +81,12 @@ def _match_job(email, company_index):
     return candidates[0]  # else most recently applied
 
 
-def main():
+def main(days=3):
     applied_jobs = store.get_applied_jobs()
     company_index = _build_company_index(applied_jobs)
     print(f"Tracking {len(applied_jobs)} applied jobs across {len(company_index)} companies")
 
-    messages = gmail_client.recent_messages(days=3)
+    messages = gmail_client.recent_messages(days=days)
     print(f"Fetched {len(messages)} recent emails")
 
     stats = {"updated": 0, "needs_review": 0, "matched": 0, "skipped_unknown": 0}
@@ -81,6 +94,8 @@ def main():
 
     for email in messages:
         if store.is_email_processed(email["id"]):
+            continue
+        if _is_noise(email):
             continue
         job = _match_job(email, company_index)
         if not job:
@@ -101,7 +116,10 @@ def main():
             store.mark_email_processed(email["id"], job["job_id"], status, conf)
             continue
 
-        needs_review = conf < CONFIDENCE_THRESHOLD
+        # Offers are high-stakes and rare -- never auto-apply one; always let
+        # the user confirm an "accepted" (guards against false positives like a
+        # generic "onboarding call" meeting invite).
+        needs_review = conf < CONFIDENCE_THRESHOLD or status == "accepted"
         store.set_application_status(
             job["job_id"], status, source="email",
             email_id=email["id"], email_thread_url=gmail_client.thread_url(email["thread_id"]),

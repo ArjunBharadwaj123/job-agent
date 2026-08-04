@@ -12,6 +12,7 @@ unknown. "unknown" means "not a status email" and should be skipped.
 import json
 import os
 import re
+import time
 
 import requests
 
@@ -59,30 +60,38 @@ def _classify_groq(email, job):
         f"Links in email: {email.get('urls', [])[:8]}\n\n"
         f"Email body:\n{email.get('body_text','')[:4000]}"
     )
-    try:
-        resp = requests.post(
-            GROQ_URL,
-            headers={
-                "Authorization": f"Bearer {os.environ['GROQ_API_KEY']}",
-                "Content-Type": "application/json",
-                "User-Agent": _UA,
-            },
-            json={
-                "model": GROQ_MODEL,
-                "messages": [
-                    {"role": "system", "content": _SYSTEM},
-                    {"role": "user", "content": user},
-                ],
-                "response_format": {"type": "json_object"},
-                "temperature": 0.1,
-            },
-            timeout=30,
-        )
-        resp.raise_for_status()
-        content = resp.json()["choices"][0]["message"]["content"]
-        data = json.loads(content)
-    except (requests.RequestException, KeyError, ValueError) as exc:
-        print(f"  Groq classify failed ({exc}); using rules")
+    payload = {
+        "model": GROQ_MODEL,
+        "messages": [
+            {"role": "system", "content": _SYSTEM},
+            {"role": "user", "content": user},
+        ],
+        "response_format": {"type": "json_object"},
+        "temperature": 0.1,
+    }
+    headers = {
+        "Authorization": f"Bearer {os.environ['GROQ_API_KEY']}",
+        "Content-Type": "application/json",
+        "User-Agent": _UA,
+    }
+    # Retry on 429 (free-tier rate limit) with exponential backoff, honoring
+    # Retry-After when present. Fall back to rules only after exhausting these.
+    data = None
+    for attempt in range(4):
+        try:
+            resp = requests.post(GROQ_URL, headers=headers, json=payload, timeout=30)
+            if resp.status_code == 429:
+                wait = float(resp.headers.get("retry-after", 2 ** attempt))
+                print(f"  Groq 429 — retrying in {wait:.0f}s")
+                time.sleep(min(wait, 20))
+                continue
+            resp.raise_for_status()
+            data = json.loads(resp.json()["choices"][0]["message"]["content"])
+            break
+        except (requests.RequestException, KeyError, ValueError) as exc:
+            print(f"  Groq classify failed ({str(exc)[:60]}); using rules")
+            return None
+    if data is None:
         return None
 
     status = str(data.get("status", "unknown")).lower().strip()
