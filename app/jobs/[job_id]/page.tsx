@@ -18,7 +18,7 @@ export default async function JobDetail({
 
   return (
     <main className="mx-auto max-w-5xl px-4 py-8">
-      <Link href="/" className="text-sm text-zinc-500 hover:underline">
+      <Link href="/jobs" className="text-sm text-zinc-500 hover:underline">
         ← All jobs
       </Link>
 
