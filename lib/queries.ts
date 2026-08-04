@@ -217,6 +217,32 @@ export async function getProgress(): Promise<ProgressData> {
   };
 }
 
+export interface Stats {
+  total: number; // active board (non-archived)
+  applied: number; // lifetime applications (incl. archived)
+  active: number; // assessment/interview
+  offers: number; // accepted
+}
+
+export async function getStats(): Promise<Stats> {
+  const [totalRs, aggRs] = await Promise.all([
+    db.execute(`SELECT COUNT(*) AS c FROM jobs WHERE archived = 0`),
+    db.execute(`SELECT
+        SUM(CASE WHEN applied = 1 THEN 1 ELSE 0 END) AS applied,
+        SUM(CASE WHEN application_status IN ('assessment','interview') THEN 1 ELSE 0 END) AS active,
+        SUM(CASE WHEN application_status = 'accepted' THEN 1 ELSE 0 END) AS offers
+      FROM jobs`),
+  ]);
+  const total = Number((totalRs.rows[0] as unknown as { c: number }).c);
+  const agg = aggRs.rows[0] as unknown as { applied: number; active: number; offers: number };
+  return {
+    total,
+    applied: Number(agg.applied || 0),
+    active: Number(agg.active || 0),
+    offers: Number(agg.offers || 0),
+  };
+}
+
 export interface JobFacets {
   sources: string[];
   statuses: string[];

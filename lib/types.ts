@@ -65,6 +65,7 @@ export interface Job {
   action_type: string | null;
   action_url: string | null;
   description: string | null;
+  description_snippet: string | null;
   summary: string | null;
   company_summary: string | null;
   skills: string | null;

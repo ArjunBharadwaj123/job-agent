@@ -117,13 +117,13 @@ export default function JobQuickView({
             )}
           </Section>
 
-          {/* Role summary */}
+          {/* Role summary — enrichment brief, else the recovered snippet */}
           <Section title="Role" accent="indigo">
-            {enriching && !data.summary ? (
+            {enriching && !data.summary && !data.description_snippet ? (
               <Shimmer />
             ) : (
               <p className="text-sm text-zinc-700 dark:text-zinc-300">
-                {data.summary || "No role summary available."}
+                {data.summary || data.description_snippet || "No role summary available."}
               </p>
             )}
           </Section>
