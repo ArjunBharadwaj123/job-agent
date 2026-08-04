@@ -30,7 +30,7 @@ def _is_noise(email):
 # Pipeline ordering: only advance forward, and rejected/accepted are terminal
 # (can be reached from any stage but not overwritten once set).
 _ORDER = {
-    "not_applied": 0, "applied": 1, "pending": 1,
+    "not_applied": 0, "skipped": 0, "applied": 1, "pending": 1,
     "assessment": 2, "interview": 3, "accepted": 4, "rejected": 4,
 }
 _TERMINAL = {"accepted", "rejected"}
