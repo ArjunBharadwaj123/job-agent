@@ -79,3 +79,19 @@ jobs:
           NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
         run: |
           PYTHONPATH=src python src/run_new_grad_github_ingestion.py
+
+      # Gmail application-status scan: read recent emails, match to applied
+      # jobs, classify status via Groq, update the DB. `!cancelled()` so it
+      # still runs if a scrape step above failed.
+      - name: Run Gmail status scan
+        if: steps.guard.outputs.run == 'true' && !cancelled()
+        env:
+          TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL }}
+          TURSO_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}
+          GMAIL_CLIENT_ID: ${{ secrets.GMAIL_CLIENT_ID }}
+          GMAIL_CLIENT_SECRET: ${{ secrets.GMAIL_CLIENT_SECRET }}
+          GMAIL_REFRESH_TOKEN: ${{ secrets.GMAIL_REFRESH_TOKEN }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+        run: |
+          PYTHONPATH=src python src/run_email_status_scan.py

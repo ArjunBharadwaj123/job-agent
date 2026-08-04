@@ -58,6 +58,26 @@ def _format_board_lines(board_status: dict) -> str:
     return "\n".join(lines)
 
 
+def notify(body: str, title: str = "Job Agent", tags: str = "briefcase", topic: str = None) -> None:
+    """Post a plain message to the ntfy topic. No-ops when NTFY_TOPIC is unset."""
+    topic = topic or os.environ.get(NTFY_TOPIC_ENV)
+    if not topic:
+        print(f"Notification skipped ({NTFY_TOPIC_ENV} not set)")
+        return
+    try:
+        response = requests.post(
+            f"{NTFY_BASE_URL}/{topic}",
+            data=body.encode("utf-8"),
+            headers={"Title": title, "Tags": tags},
+            timeout=REQUEST_TIMEOUT,
+        )
+        response.raise_for_status()
+    except requests.RequestException as exc:
+        print(f"Notification failed: {exc}")
+        return
+    print(f"Notification sent: {body}")
+
+
 def notify_summary(results: dict, topic: str = None) -> None:
     """
     Pushes "<N> added, <M> updated." to the configured ntfy topic.
