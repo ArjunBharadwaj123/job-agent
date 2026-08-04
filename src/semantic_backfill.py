@@ -29,13 +29,23 @@ from sheet_reader import (
 
 DEFAULT_MAX_BACKFILL = 25
 
-# Only backfill jobs from these sources. google_search jobs and the
-# new_grad_github fallback source are both current and re-fetchable (real
+# Only backfill jobs from these sources. The JobSpy boards (linkedin, indeed,
+# glassdoor, zip_recruiter, google -- the primary source now tags each row
+# with the board it came from), legacy google_search jobs, and the
+# new_grad_github fallback source are all current and re-fetchable (real
 # lever/greenhouse/workday apply links), so resume-scoring them pays off. The
 # legacy simplify_github internships backlog (~1k rows) is intentionally
 # excluded: those postings are old, often expired, and re-fetching them mostly
 # fails. Set to None to backfill every source.
-BACKFILL_SOURCES = {"google_search", "new_grad_github"}
+BACKFILL_SOURCES = {
+    "linkedin",
+    "indeed",
+    "glassdoor",
+    "zip_recruiter",
+    "google",
+    "google_search",
+    "new_grad_github",
+}
 
 
 def backfill_unscored(

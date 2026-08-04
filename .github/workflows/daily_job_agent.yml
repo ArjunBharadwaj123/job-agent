@@ -57,15 +57,15 @@ jobs:
           ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
           EOF
 
-      - name: Run Google Search ingestion job agent
+      - name: Run JobSpy ingestion job agent
         if: steps.guard.outputs.run == 'true'
         env:
-          GOOGLE_APPLICATION_CREDENTIALS: credentials/service_account.json
-          SERPAPI_API_KEY: ${{ secrets.SERPAPI_API_KEY }}
+          TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL }}
+          TURSO_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
         run: |
-          PYTHONPATH=src python src/run_google_search_ingestion.py
+          PYTHONPATH=src python src/run_jobspy_ingestion.py
 
       # Fallback source: the SimplifyJobs New-Grad-Positions repo (SWE +
       # AI/ML). `!cancelled()` (instead of the implicit success()) means this
@@ -74,8 +74,8 @@ jobs:
       - name: Run New-Grad GitHub ingestion (fallback source)
         if: steps.guard.outputs.run == 'true' && !cancelled()
         env:
-          GOOGLE_APPLICATION_CREDENTIALS: credentials/service_account.json
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL }}
+          TURSO_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}
           NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
         run: |
           PYTHONPATH=src python src/run_new_grad_github_ingestion.py

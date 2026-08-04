@@ -1,42 +1,24 @@
 """
 Fallback ingestion runner: pulls new-grad SWE + AI/ML roles from the
-SimplifyJobs New-Grad-Positions GitHub repo and writes them to the Jobs sheet.
+SimplifyJobs New-Grad-Positions GitHub repo and writes them to Turso.
 
-Runs alongside (and independently of) the Google Search runner so the daily
-job still produces results when SerpAPI/Gemini are unavailable -- this path
-needs only the Google service-account credentials and a plain HTTP GET.
+Runs alongside (and independently of) the JobSpy runner so the daily job still
+produces results when the boards/Gemini are unavailable -- this path needs only
+a plain HTTP GET and the Turso credentials.
 
-New rows land keyword-scored with semantic_scored = FALSE; the Google runner's
-backfill pass (backfill_unscored) resume-scores them newest-first on later
-runs, since new_grad_github is an eligible backfill source.
+New rows land keyword-scored with semantic_scored = FALSE; the JobSpy runner's
+backfill pass resume-scores them newest-first on later runs, since
+new_grad_github is an eligible backfill source.
 """
 
-from google.oauth2.service_account import Credentials
-from googleapiclient.discovery import build
-
 from scrapers.new_grad_github import NewGradGitHubScraper
-from settings_reader import read_settings
-from sheet_reader import refresh_jobs, get_sheet_id
 from notifier import notify_summary
+import store
 
 # ----------------------------
-# Config
+# Load settings from Turso
 # ----------------------------
-SPREADSHEET_ID = "1urLLyn7yg6W17l2OsRhonKP6E2wR-8pNF1e8ByKm848"
-SHEET_NAME = "Jobs"
-CREDENTIALS_FILE = "credentials/service_account.json"
-
-# ----------------------------
-# Auth
-# ----------------------------
-creds = Credentials.from_service_account_file(
-    CREDENTIALS_FILE,
-    scopes=["https://www.googleapis.com/auth/spreadsheets"],
-)
-
-service = build("sheets", "v4", credentials=creds)
-sheet_id = get_sheet_id(service, SPREADSHEET_ID, SHEET_NAME)
-settings = read_settings()
+settings = store.get_settings()
 print("Loaded settings:", settings)
 
 # ----------------------------
@@ -51,17 +33,14 @@ raw_jobs = raw_jobs[:MAX_JOBS]
 
 print(f"Processing {len(raw_jobs)} jobs (max_jobs={MAX_JOBS})")
 
-# ----------------------------
-# Write to sheet
-# ----------------------------
-results = refresh_jobs(
-    raw_jobs=raw_jobs,
-    service=service,
-    spreadsheet_id=SPREADSHEET_ID,
-    sheet_name=SHEET_NAME,
-    sheet_id=sheet_id,
-)
+# Descriptions aren't used by this path; drop them before persisting.
+for job in raw_jobs:
+    job.pop("description", None)
 
+# ----------------------------
+# Write to Turso (upsert; user-owned columns and locked rows are preserved)
+# ----------------------------
+results = store.upsert_jobs(raw_jobs)
 print("Results:", results)
 
 # ----------------------------
