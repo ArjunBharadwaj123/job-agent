@@ -295,6 +295,28 @@ export async function saveResources(patch: {
 // Create a job the user added by hand. Uses the scraper's deterministic job_id
 // so it dedupes with scraped rows. Returns { existing } without inserting when
 // a row with that id already exists.
+// Score a manually-added job by how many of the candidate's resume skills it
+// asks for, and derive a confidence from that (so the field isn't blank).
+async function scoreManualJob(
+  title: string,
+  description: string
+): Promise<{ relevance_score: number; confidence: number }> {
+  const { extractSkills } = await import("./skills");
+  const resumeRs = await db.execute("SELECT content FROM resume WHERE id = 1");
+  const resume = ((resumeRs.rows[0] as unknown as { content?: string })?.content) ?? "";
+  const resumeSkills = new Set(extractSkills(resume, 50));
+  const jobSkills = extractSkills(`${title} ${description}`, 50);
+  const overlap = jobSkills.filter((s) => resumeSkills.has(s)).length;
+
+  const relevance_score = Math.min(100, 45 + overlap * 9);
+  const confidence =
+    relevance_score >= 90 ? 0.95 :
+    relevance_score >= 75 ? 0.85 :
+    relevance_score >= 60 ? 0.7 :
+    relevance_score >= 45 ? 0.5 : 0.3;
+  return { relevance_score, confidence };
+}
+
 export async function createJob(input: {
   title: string;
   company: string;
@@ -311,13 +333,18 @@ export async function createJob(input: {
   });
   if (exists.rows.length > 0) return { job_id, existing: true };
 
+  const { relevance_score, confidence } = await scoreManualJob(
+    input.title,
+    input.description || ""
+  );
+
   const now = new Date().toISOString();
   await db.execute({
     sql: `INSERT INTO jobs
             (job_id, job_title, company, location, job_url, source, date_found,
              last_updated, applied, application_status, archived, semantic_scored,
-             locked, description)
-          VALUES (?, ?, ?, ?, ?, 'manual', ?, ?, 0, 'not_applied', 0, 0, 0, ?)`,
+             locked, description, relevance_score, confidence)
+          VALUES (?, ?, ?, ?, ?, 'manual', ?, ?, 0, 'not_applied', 0, 0, 0, ?, ?, ?)`,
     args: [
       job_id,
       input.title.trim(),
@@ -327,6 +354,8 @@ export async function createJob(input: {
       now,
       now,
       input.description || null,
+      relevance_score,
+      confidence,
     ],
   });
   return { job_id, existing: false };
