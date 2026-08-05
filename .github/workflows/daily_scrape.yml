@@ -1,15 +1,9 @@
-name: Daily Job Scrape
+name: Job Scrape (on-demand)
 
+# Scraping is triggered on demand from the dashboard's "Refresh jobs" button
+# (via the GitHub workflow_dispatch API) rather than on a daily schedule. The
+# email status scan (daily_email_scan.yml) keeps its 9am schedule.
 on:
-  schedule:
-    # True 9:00 AM Eastern year-round. GitHub cron is fixed UTC and does not
-    # follow daylight saving, so we register BOTH offsets and let the "guard"
-    # step run the job only when it's actually 09:xx in New York:
-    #   13:00 UTC = 9am EDT (summer)   14:00 UTC = 9am EST (winter)
-    # Exactly one of these is 9am ET on any given day; the other skips.
-    # NOTE: scheduled triggers only fire from the DEFAULT branch (main).
-    - cron: "0 13 * * *"
-    - cron: "0 14 * * *"
   workflow_dispatch:
 
 jobs:
