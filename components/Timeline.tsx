@@ -1,5 +1,6 @@
 import type { StatusEvent } from "@/lib/types";
 import { STATUS_LABELS, type ApplicationStatus } from "@/lib/types";
+import LocalTime from "./LocalTime";
 
 function label(s: string | null) {
   if (!s) return "—";
@@ -59,7 +60,7 @@ export default function Timeline({ events }: { events: StatusEvent[] }) {
             </a>
           )}
           <div className="mt-1 text-xs text-zinc-400">
-            {e.created_at ? new Date(e.created_at).toLocaleString() : ""}
+            <LocalTime iso={e.created_at} />
           </div>
         </li>
       ))}

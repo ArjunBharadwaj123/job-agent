@@ -20,7 +20,7 @@ export default async function JobsPage() {
         <StatTile label="Assess / Interview" value={stats.active} gradient="from-violet-500 to-fuchsia-500" />
         <StatTile label="Offers" value={stats.offers} gradient="from-emerald-500 to-teal-500" />
       </div>
-      <JobTable jobs={jobs} sources={facets.sources} />
+      <JobTable jobs={jobs} sources={facets.sources} locations={facets.locations} />
     </main>
   );
 }

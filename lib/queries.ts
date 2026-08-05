@@ -390,15 +390,18 @@ export async function getStats(): Promise<Stats> {
 export interface JobFacets {
   sources: string[];
   statuses: string[];
+  locations: string[];
 }
 
 export async function getFacets(): Promise<JobFacets> {
-  const [srcRs, statRs] = await Promise.all([
+  const [srcRs, statRs, locRs] = await Promise.all([
     db.execute(`SELECT DISTINCT source FROM jobs WHERE source IS NOT NULL AND source != '' ORDER BY source`),
     db.execute(`SELECT DISTINCT application_status FROM jobs ORDER BY application_status`),
+    db.execute(`SELECT DISTINCT location FROM jobs WHERE archived = 0 AND location IS NOT NULL AND location != '' ORDER BY location`),
   ]);
   return {
     sources: srcRs.rows.map((r) => r.source as string),
     statuses: statRs.rows.map((r) => r.application_status as string),
+    locations: locRs.rows.map((r) => r.location as string),
   };
 }

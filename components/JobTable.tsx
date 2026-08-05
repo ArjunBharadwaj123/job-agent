@@ -16,11 +16,21 @@ function scorePill(score: number | null) {
   return "bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400";
 }
 
-export default function JobTable({ jobs, sources }: { jobs: Job[]; sources: string[] }) {
+export default function JobTable({
+  jobs,
+  sources,
+  locations,
+}: {
+  jobs: Job[];
+  sources: string[];
+  locations: string[];
+}) {
   const router = useRouter();
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState<string>("all");
   const [source, setSource] = useState<string>("all");
+  const [location, setLocation] = useState<string>("all");
+  const [minScore, setMinScore] = useState(0);
   const [appliedOnly, setAppliedOnly] = useState(false);
   // Default: most recent first.
   const [sortKey, setSortKey] = useState<SortKey>("date_found");
@@ -32,6 +42,8 @@ export default function JobTable({ jobs, sources }: { jobs: Job[]; sources: stri
     const rows = jobs.filter((j) => {
       if (status !== "all" && j.application_status !== status) return false;
       if (source !== "all" && j.source !== source) return false;
+      if (location !== "all" && j.location !== location) return false;
+      if (minScore > 0 && (j.relevance_score ?? 0) < minScore) return false;
       if (appliedOnly && !j.applied) return false;
       if (q) {
         const hay = `${j.job_title} ${j.company} ${j.location ?? ""}`.toLowerCase();
@@ -60,7 +72,7 @@ export default function JobTable({ jobs, sources }: { jobs: Job[]; sources: stri
       return 0;
     });
     return rows;
-  }, [jobs, query, status, source, appliedOnly, sortKey, sortDir]);
+  }, [jobs, query, status, source, location, minScore, appliedOnly, sortKey, sortDir]);
 
   function toggleSort(key: SortKey) {
     if (sortKey === key) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
@@ -105,9 +117,34 @@ export default function JobTable({ jobs, sources }: { jobs: Job[]; sources: stri
             </option>
           ))}
         </select>
+        <select
+          value={location}
+          onChange={(e) => setLocation(e.target.value)}
+          className="max-w-[180px] rounded-lg border border-zinc-300 bg-white px-3 py-2.5 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+        >
+          <option value="all">All locations</option>
+          {locations.map((l) => (
+            <option key={l} value={l}>
+              {l}
+            </option>
+          ))}
+        </select>
         <label className="flex items-center gap-2 rounded-lg border border-zinc-300 px-3 py-2.5 text-sm text-zinc-600 dark:border-zinc-700 dark:text-zinc-400">
           <input type="checkbox" checked={appliedOnly} onChange={(e) => setAppliedOnly(e.target.checked)} />
           Applied only
+        </label>
+        <label className="flex items-center gap-2 rounded-lg border border-zinc-300 px-3 py-2.5 text-sm text-zinc-600 dark:border-zinc-700 dark:text-zinc-400">
+          <span className="whitespace-nowrap">Min score</span>
+          <input
+            type="range"
+            min={0}
+            max={100}
+            step={5}
+            value={minScore}
+            onChange={(e) => setMinScore(Number(e.target.value))}
+            className="w-28 accent-indigo-500"
+          />
+          <span className="w-7 tabular-nums text-zinc-900 dark:text-zinc-100">{minScore}</span>
         </label>
       </div>
 
