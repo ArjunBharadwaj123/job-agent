@@ -21,10 +21,11 @@ export default async function Home() {
       </h1>
       <p className="mb-6 text-sm text-zinc-500">Your application activity over time.</p>
 
-      <div className="mb-8 grid grid-cols-3 gap-3">
+      <div className="mb-8 grid grid-cols-2 gap-3 sm:grid-cols-4">
         <StatTile label="Total applications" value={p.total} gradient="from-indigo-500 to-violet-500" />
         <StatTile label="Active days" value={p.activeDays} gradient="from-violet-500 to-fuchsia-500" />
         <StatTile label="Average / day" value={p.avgPerDay} gradient="from-fuchsia-500 to-rose-500" />
+        <StatTile label="Skipped" value={p.statusCounts["skipped"] ?? 0} gradient="from-zinc-400 to-zinc-500" />
       </div>
 
       <section className="mb-8 rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-950">

@@ -61,8 +61,12 @@ export async function updateUserFields(jobId: string, patch: UserFieldUpdate) {
   if (patch.application_status !== undefined) {
     sets.push("application_status = ?");
     args.push(patch.application_status);
-    // Marking anything past not_applied implies applied=1 + a date_applied.
-    if (patch.application_status !== "not_applied" && !current.applied) {
+    if (patch.application_status === "not_applied" || patch.application_status === "skipped") {
+      // Neither is an application: never mark applied, and clear it if set.
+      sets.push("applied = 0");
+      sets.push("date_applied = NULL");
+    } else if (!current.applied) {
+      // Any real status (applied/pending/…/rejected/accepted) implies applied.
       sets.push("applied = 1");
       if (!current.date_applied) {
         sets.push("date_applied = ?");
@@ -185,7 +189,7 @@ function toIso(raw: string): string | null {
 
 export async function getProgress(): Promise<ProgressData> {
   const rs = await db.execute(
-    `SELECT date_applied FROM jobs WHERE applied = 1 AND date_applied IS NOT NULL AND date_applied != ''`
+    `SELECT date_applied FROM jobs WHERE applied = 1 AND application_status != 'skipped' AND date_applied IS NOT NULL AND date_applied != ''`
   );
   const counts = new Map<string, number>();
   for (const row of rs.rows) {
@@ -372,7 +376,7 @@ export async function getStats(): Promise<Stats> {
   const [totalRs, aggRs] = await Promise.all([
     db.execute(`SELECT COUNT(*) AS c FROM jobs WHERE archived = 0`),
     db.execute(`SELECT
-        SUM(CASE WHEN applied = 1 THEN 1 ELSE 0 END) AS applied,
+        SUM(CASE WHEN applied = 1 AND application_status != 'skipped' THEN 1 ELSE 0 END) AS applied,
         SUM(CASE WHEN application_status IN ('assessment','interview') THEN 1 ELSE 0 END) AS active,
         SUM(CASE WHEN application_status = 'accepted' THEN 1 ELSE 0 END) AS offers
       FROM jobs`),
