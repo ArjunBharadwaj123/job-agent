@@ -1,0 +1,55 @@
+name: Daily Email Status Scan
+
+on:
+  schedule:
+    # True 9:00 AM Eastern year-round (same DST-aware guard as the scrape).
+    #   13:00 UTC = 9am EDT (summer)   14:00 UTC = 9am EST (winter)
+    - cron: "0 13 * * *"
+    - cron: "0 14 * * *"
+  workflow_dispatch:
+
+jobs:
+  email-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Gate to 9am America/New_York
+        id: guard
+        run: |
+          H=$(TZ=America/New_York date +%H)
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] || [ "$H" = "09" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            echo "Proceeding (event=${{ github.event_name }}, ET hour=$H)."
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "Not 9am ET (hour=$H) — skipping this trigger."
+          fi
+
+      - name: Checkout repository
+        if: steps.guard.outputs.run == 'true'
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        if: steps.guard.outputs.run == 'true'
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Upgrade pip tooling
+        if: steps.guard.outputs.run == 'true'
+        run: python -m pip install --upgrade pip setuptools packaging
+
+      - name: Install dependencies
+        if: steps.guard.outputs.run == 'true'
+        run: pip install -r requirements.txt
+
+      - name: Run Gmail status scan
+        if: steps.guard.outputs.run == 'true'
+        env:
+          TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL }}
+          TURSO_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}
+          GMAIL_CLIENT_ID: ${{ secrets.GMAIL_CLIENT_ID }}
+          GMAIL_CLIENT_SECRET: ${{ secrets.GMAIL_CLIENT_SECRET }}
+          GMAIL_REFRESH_TOKEN: ${{ secrets.GMAIL_REFRESH_TOKEN }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+        run: PYTHONPATH=src python src/run_email_status_scan.py
