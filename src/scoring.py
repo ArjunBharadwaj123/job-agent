@@ -361,3 +361,54 @@ def blend_scores(keyword_score: int, semantic_score, semantic_weight: float = 0.
 
     blended = semantic_weight * semantic_score + (1 - semantic_weight) * keyword_score
     return max(0, min(100, round(blended)))
+
+
+# ----------------------------
+# Keyless resume-match boost
+# ----------------------------
+# A small, LLM-free way to let the resume influence relevance: reward jobs that
+# ask for skills the candidate actually has. (Full semantic match still happens
+# via SemanticScorer when GEMINI_API_KEY has credits.)
+
+_RESUME_SKILLS = [
+    ("python", r"\bpython\b"), ("java", r"\bjava\b"), ("javascript", r"\bjavascript\b"),
+    ("typescript", r"\btypescript\b"), ("c++", r"c\+\+"), ("c#", r"c#|\.net"),
+    ("go", r"\bgolang\b|\bgo\b"), ("rust", r"\brust\b"), ("sql", r"\bsql\b"),
+    ("react", r"\breact\b"), ("angular", r"\bangular\b"), ("vue", r"\bvue\b"),
+    ("node", r"\bnode(\.js)?\b"), ("django", r"\bdjango\b"), ("flask", r"\bflask\b"),
+    ("spring", r"\bspring\b"), ("fastapi", r"\bfastapi\b"),
+    ("tensorflow", r"\btensorflow\b"), ("pytorch", r"\bpytorch\b"),
+    ("scikit", r"scikit|sklearn"), ("pandas", r"\bpandas\b"), ("numpy", r"\bnumpy\b"),
+    ("spark", r"\bspark\b"), ("kafka", r"\bkafka\b"), ("airflow", r"\bairflow\b"),
+    ("aws", r"\baws\b"), ("gcp", r"\bgcp\b"), ("azure", r"\bazure\b"),
+    ("docker", r"\bdocker\b"), ("kubernetes", r"\bkubernetes\b|\bk8s\b"),
+    ("terraform", r"\bterraform\b"), ("postgres", r"postgres"), ("mongodb", r"\bmongodb\b"),
+    ("redis", r"\bredis\b"), ("graphql", r"\bgraphql\b"), ("rest", r"\brest(ful)?\b"),
+    ("ml", r"machine learning|\bml\b"), ("nlp", r"\bnlp\b|natural language"),
+    ("llm", r"\bllms?\b|large language model"), ("computer vision", r"computer vision|\bcv\b"),
+    ("distributed", r"distributed systems?"), ("microservices", r"micro-?services?"),
+    ("linux", r"\blinux\b"), ("git", r"\bgit\b"),
+]
+
+
+def resume_skills(resume_text: str) -> set:
+    """Set of skills present in the resume."""
+    if not resume_text:
+        return set()
+    low = resume_text.lower()
+    return {label for label, pat in _RESUME_SKILLS if re.search(pat, low)}
+
+
+def resume_match_boost(resume_skill_set: set, job_text: str, cap: int = 15) -> int:
+    """
+    0..cap boost = how many of the candidate's skills the job asks for. Rewards
+    jobs aligned with the resume without any API call.
+    """
+    if not resume_skill_set or not job_text:
+        return 0
+    low = job_text.lower()
+    hits = sum(
+        1 for label, pat in _RESUME_SKILLS
+        if label in resume_skill_set and re.search(pat, low)
+    )
+    return min(hits * 3, cap)

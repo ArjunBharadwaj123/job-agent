@@ -39,7 +39,13 @@ print(f"Processing {len(raw_jobs)} jobs (max_jobs={MAX_JOBS})")
 # + GEMINI_API_KEY) and the min_start_date filter. JobSpy no longer pre-fetches
 # LinkedIn descriptions, so this fetches the posting page for jobs missing one.
 # ----------------------------
-scorer = SemanticScorer(resume_text=store.get_resume())
+resume_text = store.get_resume()
+scorer = SemanticScorer(resume_text=resume_text)
+# Keyless resume-match boost: reward jobs that ask for the candidate's skills
+# (works with or without Gemini semantic scoring).
+resume_skill_set = scoring.resume_skills(resume_text)
+if resume_skill_set:
+    print(f"Resume-match boost enabled ({len(resume_skill_set)} skills from resume)")
 min_start_date = settings.get("min_start_date")
 
 if scorer.available:
@@ -73,12 +79,24 @@ if scorer.available or min_start_date:
             job["confidence"] = scoring.compute_confidence(blended, True)
             job["semantic_scored"] = semantic_score is not None
 
+        # Resume-match boost (uses the full description here).
+        job["relevance_score"] = min(
+            100,
+            job["relevance_score"]
+            + scoring.resume_match_boost(resume_skill_set, f"{job['job_title']} {description}"),
+        )
+
         kept_jobs.append(job)
 
     print(f"{len(kept_jobs)}/{len(raw_jobs)} jobs kept after description-based filtering/scoring")
     raw_jobs = kept_jobs
 else:
+    # No description pass -- apply the resume boost on the title alone.
     for job in raw_jobs:
+        job["relevance_score"] = min(
+            100,
+            job["relevance_score"] + scoring.resume_match_boost(resume_skill_set, job["job_title"]),
+        )
         job.pop("description", None)
 
 # ----------------------------
