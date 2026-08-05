@@ -122,22 +122,13 @@ def _normalize_settings(raw_settings: dict):
         raw_settings.get("min_start_date", "")
     )
 
-    # Max days back (int)
-    settings["max_days_back"] = int(
-        raw_settings.get("max_days_back", 0)
-    )
-
-    # Max jobs (int)
-    settings["max_jobs"] = int(
-        raw_settings.get("max_jobs", 0)
-    )
-
-    # Max jobs to resume-score-backfill per run (int). Bounds how much of
-    # the unscored backlog each run drains, so a large backlog doesn't blow
-    # up run time / Gemini cost. Defaults to 25 when unset.
-    settings["max_backfill"] = int(
-        raw_settings.get("max_backfill", 25)
-    )
+    # Numeric settings. Parsed defensively: an empty or non-numeric value
+    # (e.g. a blank field saved from the dashboard Settings tab) falls back to
+    # the default instead of raising ValueError and failing the whole run.
+    settings["max_days_back"] = _int_setting(raw_settings, "max_days_back", 0)
+    settings["max_jobs"] = _int_setting(raw_settings, "max_jobs", 50)
+    # Bounds how much of the unscored backlog each run drains. Defaults to 25.
+    settings["max_backfill"] = _int_setting(raw_settings, "max_backfill", 25)
 
     # US-only flag (bool)
     settings["us_only"] = raw_settings.get(
@@ -150,6 +141,17 @@ def _normalize_settings(raw_settings: dict):
     ).strip().lower() == "true"
 
     return settings
+
+
+def _int_setting(raw_settings, key, default):
+    """Parse an int setting, falling back to default on empty/non-numeric."""
+    value = str(raw_settings.get(key, "")).strip()
+    if not value:
+        return default
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
 
 
 def _parse_date_setting(value: str):
