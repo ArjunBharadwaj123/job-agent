@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 export default async function Home() {
   const p = await getProgress();
 
-  const funnel = STATUS_ORDER.filter((s) => s !== "not_applied").map((s) => ({
+  const funnel = STATUS_ORDER.filter((s) => s !== "not_applied" && s !== "skipped").map((s) => ({
     status: s,
     count: p.statusCounts[s] ?? 0,
   }));

@@ -7,9 +7,11 @@ export type ApplicationStatus =
   | "assessment"
   | "interview"
   | "rejected"
-  | "accepted";
+  | "accepted"
+  | "skipped";
 
-// Ordered pipeline (drives the stepper + kanban ordering).
+// Ordered pipeline (drives the stepper + kanban ordering). "skipped" is a
+// closed "didn't pursue" state, kept last.
 export const STATUS_ORDER: ApplicationStatus[] = [
   "not_applied",
   "applied",
@@ -18,6 +20,7 @@ export const STATUS_ORDER: ApplicationStatus[] = [
   "interview",
   "accepted",
   "rejected",
+  "skipped",
 ];
 
 export const STATUS_LABELS: Record<ApplicationStatus, string> = {
@@ -28,6 +31,7 @@ export const STATUS_LABELS: Record<ApplicationStatus, string> = {
   interview: "Interview",
   rejected: "Rejected",
   accepted: "Accepted",
+  skipped: "Skipped",
 };
 
 // Tailwind classes for status chips (light + dark aware via the base palette).
@@ -39,6 +43,7 @@ export const STATUS_STYLES: Record<ApplicationStatus, string> = {
   interview: "bg-indigo-100 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300",
   rejected: "bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-300",
   accepted: "bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300",
+  skipped: "bg-slate-200 text-slate-500 line-through decoration-slate-400 dark:bg-slate-800 dark:text-slate-500",
 };
 
 export interface Job {
