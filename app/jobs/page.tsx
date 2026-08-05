@@ -1,6 +1,7 @@
 import { getJobs, getFacets, getStats } from "@/lib/queries";
 import JobTable from "@/components/JobTable";
 import StatTile from "@/components/StatTile";
+import AddJobModal from "@/components/AddJobModal";
 
 export const dynamic = "force-dynamic";
 
@@ -9,6 +10,10 @@ export default async function JobsPage() {
 
   return (
     <main className="mx-auto max-w-6xl px-4 py-8">
+      <div className="mb-4 flex items-center justify-between">
+        <h1 className="text-xl font-semibold text-zinc-900 dark:text-zinc-100">Jobs</h1>
+        <AddJobModal />
+      </div>
       <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
         <StatTile label="Total jobs" value={stats.total} gradient="from-indigo-500 to-violet-500" />
         <StatTile label="Applied" value={stats.applied} gradient="from-blue-500 to-cyan-500" />

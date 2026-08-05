@@ -292,6 +292,46 @@ export async function saveResources(patch: {
   }
 }
 
+// Create a job the user added by hand. Uses the scraper's deterministic job_id
+// so it dedupes with scraped rows. Returns { existing } without inserting when
+// a row with that id already exists.
+export async function createJob(input: {
+  title: string;
+  company: string;
+  location?: string;
+  job_url?: string;
+  description?: string;
+}): Promise<{ job_id: string; existing: boolean }> {
+  const { generateJobId } = await import("./jobId");
+  const job_id = generateJobId(input.company, input.title, input.location || "");
+
+  const exists = await db.execute({
+    sql: "SELECT 1 FROM jobs WHERE job_id = ?",
+    args: [job_id],
+  });
+  if (exists.rows.length > 0) return { job_id, existing: true };
+
+  const now = new Date().toISOString();
+  await db.execute({
+    sql: `INSERT INTO jobs
+            (job_id, job_title, company, location, job_url, source, date_found,
+             last_updated, applied, application_status, archived, semantic_scored,
+             locked, description)
+          VALUES (?, ?, ?, ?, ?, 'manual', ?, ?, 0, 'not_applied', 0, 0, 0, ?)`,
+    args: [
+      job_id,
+      input.title.trim(),
+      input.company.trim(),
+      (input.location || "").trim(),
+      (input.job_url || "").trim(),
+      now,
+      now,
+      input.description || null,
+    ],
+  });
+  return { job_id, existing: false };
+}
+
 export interface Stats {
   total: number; // active board (non-archived)
   applied: number; // lifetime applications (incl. archived)
