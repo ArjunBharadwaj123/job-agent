@@ -170,8 +170,13 @@ export interface ProgressData {
 }
 
 // date_applied is stored as US-style M/D/YYYY -> normalize to YYYY-MM-DD.
+// date_applied comes in two shapes: legacy Sheet rows are US-style M/D/YYYY,
+// while dashboard applies save ISO YYYY-MM-DD. Handle both -> YYYY-MM-DD.
 function toIso(raw: string): string | null {
-  const parts = raw.trim().split("/");
+  const s = raw.trim();
+  const iso = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (iso) return `${iso[1]}-${iso[2]}-${iso[3]}`;
+  const parts = s.split("/");
   if (parts.length !== 3) return null;
   const [m, d, y] = parts.map((p) => parseInt(p, 10));
   if (!m || !d || !y) return null;
