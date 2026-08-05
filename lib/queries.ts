@@ -222,6 +222,76 @@ export async function getProgress(): Promise<ProgressData> {
   };
 }
 
+// ---- Resources / settings (resume, common answers, search preferences) ----
+
+export interface QA {
+  q: string;
+  a: string;
+}
+
+export interface Resources {
+  resume: string;
+  settings: Record<string, string>; // raw settings key -> value string
+  answers: QA[];
+}
+
+// Settings keys the scraper understands (edited from the Settings tab).
+export const SEARCH_PREF_KEYS = [
+  "job_titles", "locations", "entry_level_only", "us_only", "remote_allowed",
+  "min_start_date", "max_jobs", "max_days_back", "max_backfill",
+];
+
+export async function getResources(): Promise<Resources> {
+  const [resumeRs, settingsRs] = await Promise.all([
+    db.execute("SELECT content FROM resume WHERE id = 1"),
+    db.execute("SELECT key, value FROM settings"),
+  ]);
+  const resume = ((resumeRs.rows[0] as unknown as { content?: string })?.content) ?? "";
+  const settings: Record<string, string> = {};
+  let answers: QA[] = [];
+  for (const r of settingsRs.rows) {
+    const row = r as unknown as { key: string; value: string };
+    if (row.key === "application_answers") {
+      try {
+        answers = JSON.parse(row.value || "[]");
+      } catch {
+        answers = [];
+      }
+    } else {
+      settings[row.key] = row.value ?? "";
+    }
+  }
+  return { resume, settings, answers };
+}
+
+export async function saveResources(patch: {
+  resume?: string;
+  settings?: Record<string, string>;
+  answers?: QA[];
+}) {
+  if (patch.resume !== undefined) {
+    await db.execute({
+      sql: "INSERT OR REPLACE INTO resume (id, content) VALUES (1, ?)",
+      args: [patch.resume],
+    });
+  }
+  if (patch.settings) {
+    for (const [k, v] of Object.entries(patch.settings)) {
+      await db.execute({
+        sql: "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
+        args: [k, v ?? ""],
+      });
+    }
+  }
+  if (patch.answers) {
+    const clean = patch.answers.filter((qa) => qa.q.trim() || qa.a.trim());
+    await db.execute({
+      sql: "INSERT OR REPLACE INTO settings (key, value) VALUES ('application_answers', ?)",
+      args: [JSON.stringify(clean)],
+    });
+  }
+}
+
 export interface Stats {
   total: number; // active board (non-archived)
   applied: number; // lifetime applications (incl. archived)
