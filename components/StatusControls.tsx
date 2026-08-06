@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { STATUS_ORDER, STATUS_LABELS, PRIORITIES, type Job } from "@/lib/types";
+import { localToday } from "@/lib/localDate";
 
 export default function StatusControls({ job }: { job: Job }) {
   const router = useRouter();
@@ -17,7 +18,7 @@ export default function StatusControls({ job }: { job: Job }) {
     const res = await fetch(`/api/jobs/${job.job_id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
+      body: JSON.stringify({ ...body, today: localToday() }),
     });
     if (res.ok) {
       setSaved("Saved");

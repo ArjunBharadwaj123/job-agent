@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import type { Job } from "@/lib/types";
 import { STATUS_LABELS, STATUS_ORDER, STATUS_STYLES, type ApplicationStatus } from "@/lib/types";
+import { localToday } from "@/lib/localDate";
 
 function scorePill(score: number | null) {
   if (score == null) return "bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400";
@@ -59,7 +60,7 @@ export default function JobQuickView({
     await fetch(`/api/jobs/${job!.job_id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ application_status: status }),
+      body: JSON.stringify({ application_status: status, today: localToday() }),
     });
     setData((d) => (d ? { ...d, application_status: status as ApplicationStatus } : d));
     onChanged();

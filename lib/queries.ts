@@ -45,12 +45,17 @@ export interface UserFieldUpdate {
   notes?: string | null;
   date_applied?: string | null;
   locked?: boolean;
+  today?: string; // client's local date (YYYY-MM-DD) for date_applied
 }
 
 // Writes only user-owned columns. Records a manual status_event when the
 // application_status changes.
 export async function updateUserFields(jobId: string, patch: UserFieldUpdate) {
   const now = new Date().toISOString();
+  // date_applied must be the user's LOCAL date. The server runs in UTC, so at
+  // (e.g.) 9pm CDT `now` is already tomorrow — use the client-supplied local
+  // date when present, falling back to the UTC date only if it's missing.
+  const today = /^\d{4}-\d{2}-\d{2}$/.test(patch.today || "") ? patch.today! : now.slice(0, 10);
 
   const current = await getJob(jobId);
   if (!current) throw new Error("job not found");
@@ -70,7 +75,7 @@ export async function updateUserFields(jobId: string, patch: UserFieldUpdate) {
       sets.push("applied = 1");
       if (!current.date_applied) {
         sets.push("date_applied = ?");
-        args.push(now.slice(0, 10));
+        args.push(today);
       }
     }
   }
@@ -79,7 +84,7 @@ export async function updateUserFields(jobId: string, patch: UserFieldUpdate) {
     args.push(patch.applied ? 1 : 0);
     if (patch.applied && !current.date_applied) {
       sets.push("date_applied = ?");
-      args.push(now.slice(0, 10));
+      args.push(today);
     }
   }
   if (patch.priority !== undefined) {
