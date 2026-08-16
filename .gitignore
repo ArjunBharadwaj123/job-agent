@@ -1,17 +1,20 @@
-# Python
-__pycache__/
-*.py[cod]
-
-# Virtual environment
-venv/
-
-# Credentials / secrets
-credentials/*.json
-resume.txt
-.env
-
-# Logs
-*.log
+# Root-level ignores for the monorepo.
+# Component-specific rules also live in agent/.gitignore and dashboard/.gitignore.
 
 # OS
 .DS_Store
+
+# Editor / tooling
+.vscode/
+.idea/
+
+# Secrets / local config (never commit)
+.env
+.env.*
+credentials/
+resume.txt
+
+# Python
+__pycache__/
+*.py[cod]
+venv/

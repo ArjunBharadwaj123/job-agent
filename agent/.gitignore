@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.py[cod]
+
+# Virtual environment
+venv/
+
+# Credentials / secrets
+credentials/*.json
+resume.txt
+.env
+
+# Logs
+*.log
+
+# OS
+.DS_Store
