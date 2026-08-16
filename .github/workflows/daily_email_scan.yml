@@ -1,27 +1,34 @@
 name: Daily Email Status Scan
 
+# Runs every day at 8:00 AM America/New_York (year-round, DST-aware), alongside
+# the job scrape, so the daily automated refresh mirrors the dashboard's
+# "Refresh jobs" button (scrape + email status scan).
+#
+#   12:00 UTC = 8am EDT (summer)   13:00 UTC = 8am EST (winter)
+#
+# Both cron times fire, but the guard below only proceeds when the local
+# Eastern hour is actually 08, so exactly one run happens per day across the
+# DST boundary.
 on:
   schedule:
-    # True 9:00 AM Eastern year-round (same DST-aware guard as the scrape).
-    #   13:00 UTC = 9am EDT (summer)   14:00 UTC = 9am EST (winter)
+    - cron: "0 12 * * *"
     - cron: "0 13 * * *"
-    - cron: "0 14 * * *"
   workflow_dispatch:
 
 jobs:
   email-scan:
     runs-on: ubuntu-latest
     steps:
-      - name: Gate to 9am America/New_York
+      - name: Gate to 8am America/New_York
         id: guard
         run: |
           H=$(TZ=America/New_York date +%H)
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ] || [ "$H" = "09" ]; then
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] || [ "$H" = "08" ]; then
             echo "run=true" >> "$GITHUB_OUTPUT"
             echo "Proceeding (event=${{ github.event_name }}, ET hour=$H)."
           else
             echo "run=false" >> "$GITHUB_OUTPUT"
-            echo "Not 9am ET (hour=$H) — skipping this trigger."
+            echo "Not 8am ET (hour=$H) — skipping this trigger."
           fi
 
       - name: Checkout repository
@@ -40,10 +47,12 @@ jobs:
 
       - name: Install dependencies
         if: steps.guard.outputs.run == 'true'
+        working-directory: agent
         run: pip install -r requirements.txt
 
       - name: Run Gmail status scan
         if: steps.guard.outputs.run == 'true'
+        working-directory: agent
         env:
           TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL }}
           TURSO_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}

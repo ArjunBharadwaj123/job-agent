@@ -2,8 +2,8 @@ import { NextResponse } from "next/server";
 
 export const runtime = "nodejs";
 
-// Triggers the job-agent GitHub Actions workflows on demand (the scrape's daily
-// schedule was removed in favor of this button) and reports run status/ETA.
+// Triggers the job-agent GitHub Actions workflows on demand (in addition to
+// their daily 8am ET schedule) and reports run status/ETA.
 const OWNER = "ArjunBharadwaj123";
 const REPO = "job-agent";
 const SCRAPE = "daily_scrape.yml";
