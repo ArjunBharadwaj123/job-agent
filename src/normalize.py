@@ -1,70 +1,82 @@
+"""
+Pure normalization + identity helpers, shared across the pipeline.
+
+These functions used to live in the Google-Sheets modules (`sheet_reader.py`,
+`settings_reader.py`). The Sheets backend has been fully replaced by Turso, so
+the helpers that survived — deterministic job IDs, company/text normalization,
+and typed settings parsing — were extracted here with no external dependencies.
+"""
+
+import hashlib
+import re
 from datetime import datetime
 
-from google.oauth2.service_account import Credentials
-from googleapiclient.discovery import build
-
 
 # ----------------------------
-# Configuration
+# Text / identity normalization
 # ----------------------------
 
-SPREADSHEET_ID = "1urLLyn7yg6W17l2OsRhonKP6E2wR-8pNF1e8ByKm848"
-SETTINGS_SHEET_NAME = "Settings"
-CREDENTIALS_FILE = "credentials/service_account.json"
-
-
-# ----------------------------
-# Public API
-# ----------------------------
-
-def read_settings():
+def normalize_text(text):
     """
-    Reads user preferences from the Settings sheet
-    and returns a normalized settings dict.
+    Normalizes text for identity comparison.
+    - lowercases
+    - removes punctuation
+    - collapses whitespace
+    """
+    if not text:
+        return ""
+
+    text = text.lower()
+    text = re.sub(r"[^\w\s]", "", text)   # remove punctuation
+    text = re.sub(r"\s+", " ", text)      # collapse whitespace
+    return text.strip()
+
+
+def normalize_company_name(company):
+    """
+    Normalizes company names by:
+    - lowercasing
+    - removing punctuation
+    - removing common legal suffixes
+    - collapsing whitespace
+    """
+    if not company:
+        return ""
+
+    company = company.lower()
+    company = re.sub(r"[^\w\s]", "", company)
+
+    # Remove common legal suffixes
+    suffixes = {
+        "inc", "incorporated",
+        "llc", "ltd", "limited",
+        "corp", "corporation",
+        "co", "company"
+    }
+
+    words = company.split()
+    words = [w for w in words if w not in suffixes]
+
+    return " ".join(words).strip()
+
+
+def generate_job_id(company, job_title, location):
+    """
+    Generates a deterministic job_id from identity fields.
     """
 
-    creds = Credentials.from_service_account_file(
-        CREDENTIALS_FILE,
-        scopes=["https://www.googleapis.com/auth/spreadsheets.readonly"],
-    )
+    norm_company = normalize_company_name(company)
+    norm_title = normalize_text(job_title)
+    norm_location = normalize_text(location)
 
-    service = build("sheets", "v4", credentials=creds)
+    identity_string = f"{norm_company}|{norm_title}|{norm_location}"
 
-    response = (
-        service.spreadsheets()
-        .values()
-        .get(
-            spreadsheetId=SPREADSHEET_ID,
-            range=SETTINGS_SHEET_NAME,
-        )
-        .execute()
-    )
-
-    values = response.get("values", [])
-
-    if not values or len(values) < 2:
-        raise RuntimeError("Settings sheet is empty or malformed")
-
-    # Expect header: key | value
-    raw_settings = {}
-
-    for row in values[1:]:
-        if len(row) < 2:
-            continue
-
-        key = row[0].strip()
-        value = row[1].strip()
-
-        if not key:
-            continue
-
-        raw_settings[key] = value
-
-    return _normalize_settings(raw_settings)
+    # Use SHA-256 for stable, deterministic hashing
+    return hashlib.sha256(identity_string.encode("utf-8")).hexdigest()
 
 
 # ----------------------------
-# Internal helpers
+# Settings normalization
 # ----------------------------
 
 def _normalize_settings(raw_settings: dict):
@@ -80,7 +92,7 @@ def _normalize_settings(raw_settings: dict):
         jt.strip().lower()
         for jt in job_type_raw.split(",")
         if jt.strip()
-]
+    ]
 
     # Keywords (comma-separated list)
     keywords_raw = raw_settings.get("keywords", "")

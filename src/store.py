@@ -91,7 +91,7 @@ def upsert_jobs(raw_jobs, conn=None):
     conflict they are left untouched, and locked rows are not updated at all.
     """
     from datetime import datetime, timezone
-    from sheet_reader import generate_job_id
+    from normalize import generate_job_id
 
     conn = conn or get_connection()
     if not raw_jobs:
@@ -214,8 +214,8 @@ def set_setting(key, value, conn=None):
 
 
 def get_settings(conn=None):
-    """Return typed settings, re-using settings_reader's normalizer."""
-    from settings_reader import _normalize_settings
+    """Return typed settings, re-using the shared settings normalizer."""
+    from normalize import _normalize_settings
 
     conn = conn or get_connection()
     rows = conn.execute("SELECT key, value FROM settings").fetchall()

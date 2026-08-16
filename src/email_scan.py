@@ -9,7 +9,7 @@ import re
 import store
 import gmail_client
 import email_classifier
-from sheet_reader import normalize_company_name
+from normalize import normalize_company_name
 from notifier import notify
 
 CONFIDENCE_THRESHOLD = 0.75
