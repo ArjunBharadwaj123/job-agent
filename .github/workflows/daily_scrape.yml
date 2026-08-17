@@ -70,3 +70,14 @@ jobs:
           TURSO_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}
           NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
         run: PYTHONPATH=src python src/run_new_grad_github_ingestion.py
+
+      # Fallback source (Jobright public landing feed). `!cancelled()` so it
+      # still runs if the steps above failed.
+      - name: Run Jobright ingestion (fallback)
+        if: steps.guard.outputs.run == 'true' && !cancelled()
+        working-directory: agent
+        env:
+          TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL }}
+          TURSO_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+        run: PYTHONPATH=src python src/run_jobright_ingestion.py

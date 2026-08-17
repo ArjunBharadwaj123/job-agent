@@ -37,7 +37,7 @@ During internship recruiting, keeping up manually means:
 
 Job Agent runs on a schedule and:
 
-- Pulls postings from five job boards plus a curated GitHub list, de-duplicating and normalizing them deterministically
+- Pulls postings from five job boards, a curated GitHub list, and Jobright's public feed, de-duplicating and normalizing them deterministically
 - Scores every posting for relevance using keyword rules blended with resume-based semantic similarity
 - Writes to a Turso (libSQL) database with upserts that never clobber fields you've edited yourself
 - Reads your Gmail to detect application, assessment, interview, rejection, and offer emails, and updates each job's status automatically
@@ -89,12 +89,13 @@ Key principle carried over from the original design: decide first, write once. S
 ---
 ## 🔀 Data sources
 
-The pipeline ingests from two independent sources so postings keep flowing even if one breaks:
+The pipeline ingests from three independent sources so postings keep flowing even if one breaks:
 
 1. **JobSpy multi-board (primary)** — `run_jobspy_ingestion.py` queries Google Jobs, LinkedIn, Indeed, Glassdoor, and ZipRecruiter for every (job title × location) combination configured in settings. A per-board circuit breaker drops a board for the rest of the run after repeated blocks (HTTP 403/429/etc.) instead of hammering it, and a per-board collected-vs-blocked summary is pushed via ntfy after each run.
 2. **SimplifyJobs New-Grad-Positions (fallback)** — `run_new_grad_github_ingestion.py` does a keyless HTTP GET against a community-maintained GitHub README. It needs no API keys and runs even when the JobSpy step fails entirely, so an outage never leaves a day with zero new postings.
+3. **Jobright landing feed (fallback)** — `run_jobright_ingestion.py` polls Jobright's public `swan/recommend/landing/jobs` JSON endpoint, a keyless rolling window of the most recently posted roles. It deduplicates by job id across a few polls and reuses the endpoint's structured seniority / years-of-experience signals for the entry-level filter.
 
-Jobs from either source share the same scoring, dedup, and Turso upsert path, and any job that has not yet been resume-scored is picked up by a bounded backfill pass on the next run.
+Jobs from every source share the same scoring, dedup, and Turso upsert path, and any job that has not yet been resume-scored is picked up by a bounded backfill pass on the next run.
 
 <img width="1512" alt="Jobs list with filters" src="https://github.com/user-attachments/assets/134ed9b0-9825-437f-95b3-d8546fcab0b7" />
 

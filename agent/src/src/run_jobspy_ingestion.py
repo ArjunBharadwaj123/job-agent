@@ -14,7 +14,7 @@ import store
 # Sources eligible for resume-score backfill (JobSpy boards + legacy sources).
 BACKFILL_SOURCES = [
     "linkedin", "indeed", "glassdoor", "zip_recruiter", "google",
-    "google_search", "new_grad_github",
+    "google_search", "new_grad_github", "jobright",
 ]
 
 # ----------------------------
