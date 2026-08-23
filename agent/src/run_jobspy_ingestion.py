@@ -89,6 +89,16 @@ if scorer.available or min_start_date:
         kept_jobs.append(job)
 
     print(f"{len(kept_jobs)}/{len(raw_jobs)} jobs kept after description-based filtering/scoring")
+
+    # These jobs are now fully scored (semantic blend + resume boost), so we can
+    # safely drop anything below the relevance threshold before it reaches the DB.
+    scored_count = len(kept_jobs)
+    kept_jobs = [
+        j for j in kept_jobs if (j.get("relevance_score") or 0) >= scoring.MIN_RELEVANCE_SCORE
+    ]
+    dropped = scored_count - len(kept_jobs)
+    if dropped:
+        print(f"Dropped {dropped} job(s) scoring below {scoring.MIN_RELEVANCE_SCORE} (not inserted)")
     raw_jobs = kept_jobs
 else:
     # No description pass -- apply the resume boost on the title alone.
@@ -110,6 +120,7 @@ print("Results:", results)
 # where Gemini credits were unavailable), newest-first, bounded per run.
 # ----------------------------
 results["backfilled"] = 0
+results["archived_low_score"] = 0
 if scorer.available:
     candidates = store.get_unscored_jobs(
         sources=BACKFILL_SOURCES, limit=settings.get("max_backfill", 25)
@@ -125,9 +136,20 @@ if scorer.available:
             print("Backfill stopped early (embedding unavailable)")
             break
         blended = scoring.blend_scores(job["relevance_score"], semantic_score)
-        store.promote_scores(job["job_id"], blended, scoring.compute_confidence(blended, True))
-        results["backfilled"] += 1
+        # Now fully scored: archive (hide) anything still below the threshold
+        # instead of surfacing it on the board.
+        if blended < scoring.MIN_RELEVANCE_SCORE:
+            store.archive_job(job["job_id"])
+            results["archived_low_score"] += 1
+        else:
+            store.promote_scores(job["job_id"], blended, scoring.compute_confidence(blended, True))
+            results["backfilled"] += 1
     print(f"Backfill: {results['backfilled']} job(s) resume-scored this run")
+    if results["archived_low_score"]:
+        print(
+            f"Backfill: archived {results['archived_low_score']} job(s) scoring "
+            f"below {scoring.MIN_RELEVANCE_SCORE}"
+        )
 
 # ----------------------------
 # Notify (ntfy.sh) — per-board collected-vs-blocked status + counts

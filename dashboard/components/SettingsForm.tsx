@@ -20,7 +20,7 @@ function Section({ title, desc, children }: { title: string; desc?: string; chil
   );
 }
 
-function SaveButton({ onClick, saving, saved }: { onClick: () => void; saving: boolean; saved: boolean }) {
+function SaveButton({ onClick, saving, saved, error }: { onClick: () => void; saving: boolean; saved: boolean; error: boolean }) {
   return (
     <div className="mt-4 flex items-center gap-3">
       <button
@@ -31,6 +31,7 @@ function SaveButton({ onClick, saving, saved }: { onClick: () => void; saving: b
         {saving ? "Saving…" : "Save"}
       </button>
       {saved && <span className="text-sm text-emerald-500">Saved ✓</span>}
+      {error && <span className="text-sm text-rose-500">Save failed — try again</span>}
     </div>
   );
 }
@@ -44,20 +45,30 @@ export default function SettingsForm({ initial }: { initial: Resources }) {
   );
   const [savingKey, setSavingKey] = useState<string | null>(null);
   const [savedKey, setSavedKey] = useState<string | null>(null);
+  const [errorKey, setErrorKey] = useState<string | null>(null);
 
   async function save(key: string, patch: Record<string, unknown>) {
     setSavingKey(key);
     setSavedKey(null);
-    const res = await fetch("/api/settings", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(patch),
-    });
+    setErrorKey(null);
+    let ok = false;
+    try {
+      const res = await fetch("/api/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(patch),
+      });
+      ok = res.ok;
+    } catch {
+      ok = false;
+    }
     setSavingKey(null);
-    if (res.ok) {
+    if (ok) {
       setSavedKey(key);
       router.refresh();
       setTimeout(() => setSavedKey(null), 2500);
+    } else {
+      setErrorKey(key);
     }
   }
 
@@ -75,7 +86,7 @@ export default function SettingsForm({ initial }: { initial: Resources }) {
           placeholder="Paste your resume text here…"
           className="w-full resize-y rounded-lg border border-zinc-300 bg-white px-3 py-2 font-mono text-xs leading-relaxed dark:border-zinc-700 dark:bg-zinc-900"
         />
-        <SaveButton onClick={() => save("resume", { resume })} saving={savingKey === "resume"} saved={savedKey === "resume"} />
+        <SaveButton onClick={() => save("resume", { resume })} saving={savingKey === "resume"} saved={savedKey === "resume"} error={errorKey === "resume"} />
       </Section>
 
       {/* Search preferences */}
@@ -110,7 +121,7 @@ export default function SettingsForm({ initial }: { initial: Resources }) {
             </label>
           ))}
         </div>
-        <SaveButton onClick={() => save("settings", { settings })} saving={savingKey === "settings"} saved={savedKey === "settings"} />
+        <SaveButton onClick={() => save("settings", { settings })} saving={savingKey === "settings"} saved={savedKey === "settings"} error={errorKey === "settings"} />
       </Section>
 
       {/* Common application answers */}
@@ -144,7 +155,7 @@ export default function SettingsForm({ initial }: { initial: Resources }) {
           className="mt-3 rounded-lg border border-dashed border-zinc-300 px-3 py-1.5 text-sm text-zinc-500 hover:border-zinc-400 dark:border-zinc-700">
           + Add question
         </button>
-        <SaveButton onClick={() => save("answers", { answers })} saving={savingKey === "answers"} saved={savedKey === "answers"} />
+        <SaveButton onClick={() => save("answers", { answers })} saving={savingKey === "answers"} saved={savedKey === "answers"} error={errorKey === "answers"} />
       </Section>
     </div>
   );

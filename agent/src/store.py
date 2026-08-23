@@ -352,6 +352,19 @@ def promote_scores(job_id, relevance_score, confidence, conn=None):
     conn.commit()
 
 
+def archive_job(job_id, conn=None):
+    """Hide a job from the board (used when it scores below threshold after
+    full/blended scoring). Marks it semantic_scored so backfill won't retry it."""
+    from datetime import datetime, timezone
+
+    conn = conn or get_connection()
+    conn.execute(
+        "UPDATE jobs SET archived = 1, semantic_scored = 1, last_updated = ? WHERE job_id = ?",
+        (datetime.now(timezone.utc).isoformat(), job_id),
+    )
+    conn.commit()
+
+
 # ----------------------------
 # Email dedupe/audit
 # ----------------------------

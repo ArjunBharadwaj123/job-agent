@@ -9,6 +9,11 @@ re-implementing this logic and drifting out of sync.
 import re
 from datetime import date
 
+# Jobs scoring below this (after full/blended scoring) are dropped from the
+# board -- filtered pre-insert on the fully-scored path, archived post-backfill
+# for sources that only get a keyword score at insert time.
+MIN_RELEVANCE_SCORE = 50
+
 US_STATES = {
     "al", "ak", "az", "ar", "ca", "co", "ct", "de", "fl", "ga",
     "hi", "id", "il", "in", "ia", "ks", "ky", "la", "me", "md",

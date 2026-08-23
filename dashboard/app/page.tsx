@@ -1,12 +1,14 @@
-import { getProgress } from "@/lib/queries";
+import Link from "next/link";
+import { getProgress, getActivePipeline } from "@/lib/queries";
 import ProgressChart from "@/components/ProgressChart";
 import StatTile from "@/components/StatTile";
+import StatusBadge from "@/components/StatusBadge";
 import { STATUS_LABELS, STATUS_ORDER, STATUS_STYLES, type ApplicationStatus } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
 export default async function Home() {
-  const p = await getProgress();
+  const [p, pipeline] = await Promise.all([getProgress(), getActivePipeline()]);
 
   const funnel = STATUS_ORDER.filter((s) => s !== "not_applied" && s !== "skipped").map((s) => ({
     status: s,
@@ -27,6 +29,48 @@ export default async function Home() {
         <StatTile label="Average / day" value={p.avgPerDay} gradient="from-fuchsia-500 to-rose-500" />
         <StatTile label="Skipped" value={p.statusCounts["skipped"] ?? 0} gradient="from-zinc-400 to-zinc-500" />
       </div>
+
+      {/* Active pipeline — quick access to interview/assessment companies */}
+      <section className="mb-8 rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
+        <h2 className="mb-4 text-sm font-semibold uppercase tracking-wide text-zinc-500">
+          Interviews &amp; Assessments
+        </h2>
+        {pipeline.length === 0 ? (
+          <p className="text-sm text-zinc-400">
+            No jobs currently marked interview or assessment.
+          </p>
+        ) : (
+          <ul className="divide-y divide-zinc-100 dark:divide-zinc-800/70">
+            {pipeline.map((j) => {
+              const link = j.action_url || j.job_url;
+              return (
+                <li key={j.job_id} className="flex flex-wrap items-center gap-x-3 gap-y-1 py-3">
+                  <StatusBadge status={j.application_status} />
+                  <div className="min-w-0 flex-1">
+                    <Link
+                      href={`/jobs/${j.job_id}`}
+                      className="font-medium text-zinc-900 hover:underline dark:text-zinc-100"
+                    >
+                      {j.company}
+                    </Link>
+                    <span className="ml-2 text-sm text-zinc-500">{j.job_title}</span>
+                  </div>
+                  {link && (
+                    <a
+                      href={link}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="shrink-0 text-sm text-indigo-500 hover:underline"
+                    >
+                      Open posting ↗
+                    </a>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </section>
 
       <section className="mb-8 rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
         <h2 className="mb-4 text-sm font-semibold uppercase tracking-wide text-zinc-500">

@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { Job } from "@/lib/types";
 import { STATUS_LABELS, STATUS_ORDER } from "@/lib/types";
-import StatusBadge from "./StatusBadge";
+import StatusSelect from "./StatusSelect";
 import JobQuickView from "./JobQuickView";
 
 type SortKey = "date_found" | "relevance_score" | "company" | "application_status";
@@ -30,7 +30,7 @@ export default function JobTable({
   const [status, setStatus] = useState<string>("all");
   const [source, setSource] = useState<string>("all");
   const [location, setLocation] = useState<string>("all");
-  const [minScore, setMinScore] = useState(0);
+  const [minScore, setMinScore] = useState(50);
   const [appliedOnly, setAppliedOnly] = useState(false);
   // Default: most recent first.
   const [sortKey, setSortKey] = useState<SortKey>("date_found");
@@ -152,21 +152,21 @@ export default function JobTable({
 
       {/* Table */}
       <div className="overflow-x-auto rounded-xl border border-zinc-200 shadow-sm dark:border-zinc-800">
-        <table className="w-full min-w-[720px] text-sm">
+        <table className="w-full min-w-[840px] text-sm">
           <thead className="bg-gradient-to-r from-zinc-50 to-zinc-100 text-left text-xs uppercase tracking-wide text-zinc-500 dark:from-zinc-900 dark:to-zinc-900/40">
             <tr>
               <th className="cursor-pointer px-4 py-3" onClick={() => toggleSort("company")}>
                 Company / Role{arrow("company")}
               </th>
               <th className="px-4 py-3">Location</th>
-              <th className="cursor-pointer px-4 py-3" onClick={() => toggleSort("relevance_score")}>
+              <th className="cursor-pointer whitespace-nowrap px-4 py-3" onClick={() => toggleSort("relevance_score")}>
                 Score{arrow("relevance_score")}
               </th>
-              <th className="px-4 py-3">Source</th>
-              <th className="cursor-pointer px-4 py-3" onClick={() => toggleSort("date_found")}>
+              <th className="whitespace-nowrap px-4 py-3">Source</th>
+              <th className="cursor-pointer whitespace-nowrap px-4 py-3" onClick={() => toggleSort("date_found")}>
                 Added{arrow("date_found")}
               </th>
-              <th className="cursor-pointer px-4 py-3" onClick={() => toggleSort("application_status")}>
+              <th className="cursor-pointer whitespace-nowrap px-4 py-3" onClick={() => toggleSort("application_status")}>
                 Status{arrow("application_status")}
               </th>
             </tr>
@@ -183,15 +183,15 @@ export default function JobTable({
                   <div className="text-zinc-500">{j.company}</div>
                 </td>
                 <td className="px-4 py-3 text-zinc-600 dark:text-zinc-400">{j.location}</td>
-                <td className="px-4 py-3">
+                <td className="whitespace-nowrap px-4 py-3">
                   <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-semibold tabular-nums ${scorePill(j.relevance_score)}`}>
                     {j.relevance_score ?? "—"}
                   </span>
                 </td>
-                <td className="px-4 py-3 text-zinc-500">{j.source}</td>
-                <td className="px-4 py-3 text-zinc-500">{j.date_found?.slice(0, 10) || "—"}</td>
-                <td className="px-4 py-3">
-                  <StatusBadge status={j.application_status} />
+                <td className="whitespace-nowrap px-4 py-3 text-zinc-500">{j.source}</td>
+                <td className="whitespace-nowrap px-4 py-3 text-zinc-500">{j.date_found?.slice(0, 10) || "—"}</td>
+                <td className="whitespace-nowrap px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                  <StatusSelect job={j} onChanged={() => router.refresh()} />
                 </td>
               </tr>
             ))}

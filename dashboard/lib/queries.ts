@@ -253,7 +253,10 @@ export const SEARCH_PREF_KEYS = [
 export async function getResources(): Promise<Resources> {
   const [resumeRs, settingsRs] = await Promise.all([
     db.execute("SELECT content FROM resume WHERE id = 1"),
-    db.execute("SELECT key, value FROM settings"),
+    // The column is defined as `KEY` (uppercase); the libSQL client returns
+    // unaliased columns under their schema-defined case, so `row.key` would be
+    // undefined. Alias to lowercase so the property names are predictable.
+    db.execute("SELECT key AS key, value AS value FROM settings"),
   ]);
   const resume = ((resumeRs.rows[0] as unknown as { content?: string })?.content) ?? "";
   const settings: Record<string, string> = {};
@@ -299,6 +302,16 @@ export async function saveResources(patch: {
       args: [JSON.stringify(clean)],
     });
   }
+}
+
+// Jobs currently in an active interview/assessment stage, for the progress page.
+export async function getActivePipeline(): Promise<Job[]> {
+  const rs = await db.execute(
+    `SELECT * FROM jobs
+       WHERE archived = 0 AND application_status IN ('interview','assessment')
+     ORDER BY application_status, company`
+  );
+  return rows<Job>(rs);
 }
 
 // Create a job the user added by hand. Uses the scraper's deterministic job_id
